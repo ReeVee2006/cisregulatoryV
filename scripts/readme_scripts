@@ -1,0 +1,12 @@
+#scripts used in generation of manuscript entitled "Regional-specific calibration enables application of bioinformatic evidence for clinical classification of 5’ cis-regulatory variants in Mendelian disease"
+
+#Script_cisreg FILTER
+#Script_cisreg MANE ROI
+#Script_Fig2_ncvardb
+#Script_Fig3_partA_contcons
+#Script_Fig3_partB_matchedcont
+#Script_Fig4_calibration
+#Script_Fig5_heatmap
+#Script_Fig6_promoter
+#Script_Fig7_EPDnew
+3Script_Supp_Fig_dis
