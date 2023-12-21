@@ -1,0 +1,46 @@
+#Data
+Data_name	Source	Information	Date-
+disV_VEP_KnYrlYkXXEctn0hs.txt	VEP web GUI	Disease-associated variants annotated with VEP via web GUI	20231025
+disV_CADD_GRCh38-v1.6_anno_f2c052d18d502f786e25fd3c720767cb.tsv	CADD web GUI	Disease-associated variants annotated with CADD via web GUI	20231025
+mane_crroi	BioMart_ensembl	Biomart sourced Ensembl MANE_select and MANE_Clinical transcript information	20230414
+OaVt9eEsWgLnckRd	VEP web GUI	All variants cisregAll38 annotated with VEP Ensembl transcripts	20231026
+12920_2022_1216_MOESM3_ESM.csv	cisregFILTER	dataset from alsheikh et al 2022 with validated presumed causal GWAS variants
+all38_scored_variants_annotatedv2_220423.tsv	SpliceAI	Annotation performed as per Canson et al	2023
+hglft_genome_3ad85_b177f0_hg19.bed	liftOver UCSC	Liftover created file of grch37 location of the full All38 cisregulatory variant set	20230424
+GRCh38-v1.6_anno_ed4d5aceb9f7cd988ac26527738120ea.tsv	CADD web GUI	Full variant set annotation in CADD for FILTER process	20231026
+Full REMM score 13k variants_df2.txt	REMM web GUI	Annotation via web Gui plu 4 additional manual corrections of indels by sngl look up	20230606
+Eigenscores_results_full13k_df_RV.txt	customVEP_Eigen	custom VEP annotation with precomputed Eigen data	20230705
+FATHMM-XFresults_261023.txt	FATHMM-XF web GUI	Annotation via web GUI	20231026
+FATHMM-MKLresults_grc37_271023.txt	FATHMM-XF web GUI	Annotation via web GUI nb grc37 dataset	20231027
+linsightscoresFINAL_df.txt	customVEP_Linsight	custom VEP annotation with precomputed Linsight data	20230705
+cisreg_testset_ANNOTcategories.txt	Script_ANNOT_SCORES	Many input annotations summary and interpretation into categories_data for calibration	20231031
+cisreg_all38_grc38_vcf.txt	cisregFILTER	580 disease and 12853 control variants data table used for sourcing annotations filter not applied
+18032022_ROI annotations_3.txt
+230414_manegenes_annot.txt
+230714_annotations_INFO.txt
+230714_cisreg_testset_ANNOTsummary.txt
+GRCh38-v1.6_anno_9e955f2879b7b2053983b915792cc3d2.tsv
+Hs_EPDnew.bed
+Mf5MH6oIN6xLJu7x.txt
+cis reg ROI_171221 - Copy.txt
+cisreg_all38_grc37_vcf.vcf
+cisreg_all38_grc38_vcf.txt
+cisreg_testset230424_grc37_vcf.vcf
+cisreg_testset230424_grc37_vcf_df.txt
+dis580_GRCh38-v1.6_anno_3ca54198ce8d48d8d463981568d0e3bb.tsv	dis580	580 disease variants CADD annotation via web GUI
+dis580_vEc1Vm2zTF9xalK8.txt	dis580	580 disease variants VEP annotation via web GUI
+hg19ToHg38.over.chain
+hg19ToHg38.over.chain.gz
+hg38ToHg19.over.chain
+hg38ToHg19.over.chain.gz
+v0.4.hg38_REMM.tsv
+all38_30EhSYWJlVbudduW.txt	cisregFILTER	all variants including 580 disease and 12853 control variants VEP annotation via web GUI
+230228_manecodingregions.txt	cisregFILTER	all MANE gene widest genomic coding intervals created from ensembl biomart 27.02.23
+230221_cisregAll38_vepAFannot.txt	cisregFILTER	AF based on cmd line vep annotation
+230327_maneroi_testset_annot	cisregFILTER	AF based on cmd line vep annotation
+martquery_0228035716_130.txt	cisregMANEROI	ensembl biomart file download of MANE gene features downloaded 28 feb 2023
+cisreg_testset230424_VCF	cisregFILTER	VCF format with header final set of filtered variants created at the end of FILTER process
+cisreg_testset230424	cisregFILTER	dataframe final set of filtered variants created at the end of FILTER process
+all38_K2lRbDZeIwWjHMTL	cisregFILTER	VEP web GUI annotation from 5.10.23
+all38_GRCh38-v1.6_anno_02b4018235aaad54199e3e7ce57bcee3	cisregFILTER	CADD annotation via web GUI from 5.10.23
+cisregAll38_vcf_140223_cmdvep	cisreg maxAF	VEP cmd line annotation output input for FILTER
