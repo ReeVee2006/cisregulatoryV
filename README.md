@@ -3,10 +3,12 @@
 ---------------------------------
 
 ## About
-This git hub ontains the scripts and datatables required for generation of the information and figures in Villani et al. 
+This github contains the scripts and datatables required for generation of the information and figures in Villani et al. 
 
 ## Usage requirements
+
 Script use requires:
+
 R version 4.2.3
 R packages;
 tidyverse 2.0.0
@@ -18,6 +20,7 @@ vcfR 1.14.0
 rstatix 0.7.2
 
 Data provided in the data package has been generated using the following packages:
+
 htslib 1.9
 bedops 2.4.35
 VEP 99.2
@@ -38,11 +41,13 @@ ClinVar	VCF variant files clinvar_20221105
 SpliceAI  1.3.1
 
 Additionally data has been sourced from the following online resources:
+
 EPDnew; https://epd.expasy.org/epd
 ncVarDB; https://github.com/Gardner-BinfLab/ncVarDB
 Alsheikh AJ, Wollenhaupt S, King EA, Reeb J, Ghosh S, Stolzenburg LR, Tamim S, Lazar J, Davis JW, Jacob HJ. The landscape of GWAS validation; systematic review identifying 309 validated non-coding variants across 130 human diseases. BMC Med Genomics. 2022 Apr 1;15(1):74. doi: 10.1186/s12920-022-01216-w. PMID: 35365203; PMCID: PMC8973751.
 
 ## Scripts provided
+
 Script_Fig2_ncvardb; Analysis of non-coding variants in ncVarDB impact prediction scores and molecular consequence
 Script_Fig3_partA_contcons; Extraction of data from genomAD VCF for correlation analysis
 Script_Fig3_partB_matchedcont; Generation of control variant correlation figure from matched regions
