@@ -1,4 +1,4 @@
-##cis reg variant - Fig 7
+##cis reg variant 
 ##promoter analysis - CADD web GUI sub-annotations
 ##R code complemented by base annotation datasets in corresponding Data folder - including source files for project and sources files for annotation, create a folder for the specific annotation set which is directd within specific folder in code 
 ##CADD annotation analysis - input files via web/GUI based annotation  - GRCh38 v1.6
@@ -29,6 +29,8 @@ cisregAll38_vcf = read.table("temp/cisreg_all38_grc38_vcf.txt", sep = "\t", head
 #load annotation data
 cisregANNOT_c = read.table("temp/cisreg_testset_ANNOTcategories.txt", sep = "\t", header = TRUE, stringsAsFactors = TRUE)
 colnames(cisregANNOT_c)
+sum(is.na(cisregANNOT_c$CADD_PHRED))
+sum(is.na(cisregANNOT_c$CADD_scorebin))
 
 #----------------------------------------------------------------------------------------------
 #using the testset annotation to look at the dataset features
@@ -55,10 +57,10 @@ cadd = ggplot(CADD, aes(INFO, CADD_PHRED))
 cadd + geom_boxplot() + geom_hline(yintercept = 25.3) + geom_hline(yintercept = 22.7)
 
 sum(CADD$CADD_PHRED >= 22.7)
-sum(CADD$CADD_PHRED >= 22.7 & CADD$INFO == "Dis")
-sum(CADD$CADD_PHRED >= 22.7 & CADD$INFO == "Dis")/448
+sum(CADD$CADD_PHRED >= 22.7 & CADD$INFO == "Disease")
+sum(CADD$CADD_PHRED >= 22.7 & CADD$INFO == "Disease")/445
 sum(CADD$CADD_PHRED <= 22.7)
-sum(CADD$CADD_PHRED <= 22.7& CADD$INFO == "Dis")/448
+sum(CADD$CADD_PHRED <= 22.7& CADD$INFO == "Disease")/445
 
 #graphing C v Disease for CADD component scores
 CADD$exp.group = as.factor(CADD$INFO)
@@ -180,6 +182,12 @@ print(EnsRF_df)
 
 #EnsRegFeatSUM
 CADD  %>% count(INFO, EnsRegFeatSUM)
+enssumm = CADD  %>% count(INFO, EnsRegFeatSUM)
+n_contvar = sum(CADD$INFO == "Control")
+n_disvar = sum(CADD$INFO == "Dis")
+enssumm$n = as.numeric(enssumm$n)
+enssumm$prop_exp.group = ifelse(enssumm$INFO == "Control",enssumm$n/(sum(CADD$INFO == "Control")), enssumm$n/(sum(CADD$INFO == "Disease")))
+enssumm
 
 ggplot(CADD, aes(INFO, fill = EnsRegFeatSUM))+ 
   geom_bar(position = "fill") + labs(y = "Ensembl regulatory region overlap")
@@ -215,6 +223,7 @@ plot_grid(plot_grid(gc, cpg,
                     ncol = 3, nrow = 1),
           rel_heights = c(2, 1),
           ncol = 1, nrow = 2)
+
 ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig_promoter_full.png", width = 9, height = 12, device='png', dpi=600)
 
 theme_set(theme_gray(base_size = 14))
