@@ -11,11 +11,8 @@ library(grid)
 
 #--------------------------------------------
 #ANNOTATION FILE BASE - INPUT
-
 #SET UP FILEPATH OR upload the 'standard data for annotation'
-
 #setwd 
-setwd("D:/cisreg_manuscript/SUPP")
 
 #-----------------------------------------------------------------
 #####################################################################
@@ -81,8 +78,7 @@ ncdbvar$variant38 = paste(ncdbvar$variant38ref, ncdbvar$ALT, sep = ">")
 
 ###################################################---------------------------------------
 #ANNOTATIONS - 2
-#VEP annotation - currently input above file into web GUI, transcript database Ensembl, dont include protein annotation, phenotype yes to all, add spliceAI and conservation - currently only AA and BLUOSUM
-#current  
+#VEP annotation - currently input above file into web GUI, transcript database Ensembl, don't include protein annotation, phenotype yes to all, add spliceAI and conservation - currently only AA and BLUOSUM
 #----------------------------------------
 
 ##VEP annotation (includes) ANNOTATION created a vcf file as input for online GUI VEP see INPUT script, 
@@ -262,6 +258,7 @@ ggplot(ncConsplot, aes(VEP_Consequence_adj2, PHRED, fill = exp.group))+
   geom_boxplot(alpha = 0.2) + theme(axis.text.x = element_text(angle=45))+  
   theme(axis.text.x = element_text(angle=45, hjust = 1),legend.title = element_blank(),text = element_text(size= 12)) +
   labs(x = "",  y = "CADD")
+
 dev.off()
 
 #-----------------------------------------------------------------
@@ -285,6 +282,3 @@ consplot = ggplot(ncConsplot, aes(VEP_Consequence_adj2, PHRED, fill = exp.group)
   labs(x = "",  y = "CADD")
 
 plot_grid(caddplot, consplot, align = "h", axis = "b", rel_widths = c(1, 1.3),labels = c("A", "B"))
-
-ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig2_ncvar.png", width = 9, height = 4, device='png', dpi=1200)
-
