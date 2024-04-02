@@ -1,16 +1,14 @@
 ##cis reg variants - FILTER
 ##web based input files - annotation of variant list for filter
-##base FILTERation datasets in data folder - 
+##base annotation datasets in data folder
 ##Creating input files with web/GUI based annotations 
-##last executed 26.10.23 RV
+##Author Rehan Villani - last update 24.03.24
 
 library(tidyverse)
 library(GenomicRanges)
-#library(liftOver)
 
 #set up files--------------------------------------------
 #setwd 
-setwd("D:/cisreg_manuscript/SUPP")
 
 ## Load datasets-Cisreg variants, control and disease to combine dataset and create into VCF file
 #load disease-associated variant set
@@ -198,7 +196,7 @@ cisregAll_VEP = separate(data = cisregAll_VEP, col = Location2, into = c("locati
 #------identifying variants in a genomic coding region----------------------------------------------------
 #ie overlap between the genomic coding intervals and the variant list (including all genomic coding region - non coding intronic variants also)
 #load the file of all gene widest genomic coding intervals, created from ensembl biomart 27.02.23
-codingregionsmane = read.table("Data/230228_manecodingregions.txt", header = TRUE, sep = "\t")
+codingregionsmane = read.table("temp/230228_manecodingregions.txt", header = TRUE, sep = "\t")
 
 #creating a bed/granges of the coding regions
 codingregionsmane$seqnames = paste("chr",codingregionsmane$Chromosome.scaffold.name,sep ="")
@@ -271,14 +269,15 @@ summary(coding)
 
 #summary of coding variants
 summary(as.factor(coding$SYMBOL))
+coding$Uploaded_variation %>% n_distinct()
 coding$SYMBOL %>% n_distinct()
 
 #annotate variant file to identify if aa annotation overlap
 cisregAll38$codingaa <- as.factor(ifelse(cisregAll38$ID %in% codingVar, "codingaa", "no"))
 summary(cisregAll38)
+table(cisregAll38$codingaa, cisregAll38$INFO)
 
-#------identify gwas variants-----
-###------exclude-Alsheikh-2022-validated-GWAS variants--
+#------identify gwas variants-----exclude-Alsheikh-2022-validated-GWAS variants--
 
 #load dataset of control variants listed in Alsheikh et al 2022  
 Alsh22 = read.csv("Data/12920_2022_1216_MOESM3_ESM.csv", header = TRUE)
@@ -311,15 +310,25 @@ summary(cisregAll38)
 #------identify common variants based on AF--------------------------------------------
 #excluding common variants, AF based on VEP annotation
 cisreg_All38_vepAF = cisregAll_VEP
+colnames(cisregAll_VEP)
 colnames(cisreg_All38_vepAF)
-summary(cisreg_All38_vepAF$gnomADg_AF)
 
 #selecting highest alternative AF from (non-founder) populations, Non-Finnish European, South-Asian, African-American/African ancestry, Latino, East Asian populations. 
 #create new column with the calculated maxAF 
 pops = c("gnomADg_NFE_AF","gnomADg_AFR_AF","gnomADg_SAS_AF","gnomADg_EAS_AF","gnomADg_AMR_AF")
+cisreg_All38_vepAF = cisregAll_VEP %>% select(c("Uploaded_variation","gnomADg_AF",pops))
+
+#replacing the no result '-' category from gnomadAD as a 0 (assuming no allele = none detected)
+cisreg_All38_vepAF$gnomADg_AF[cisreg_All38_vepAF$gnomADg_AF == '-'] = '0'
+cisreg_All38_vepAF$gnomADg_NFE_AF[cisreg_All38_vepAF$gnomADg_NFE_AF == '-'] = '0'
+cisreg_All38_vepAF$gnomADg_AFR_AF[cisreg_All38_vepAF$gnomADg_AFR_AF == '-'] = '0'
+cisreg_All38_vepAF$gnomADg_SAS_AF[cisreg_All38_vepAF$gnomADg_SAS_AF == '-'] = '0'
+cisreg_All38_vepAF$gnomADg_EAS_AF[cisreg_All38_vepAF$gnomADg_EAS_AF == '-'] = '0'
+cisreg_All38_vepAF$gnomADg_AMR_AF[cisreg_All38_vepAF$gnomADg_AMR_AF == '-'] = '0'
 cisreg_All38_vepAF <- cisreg_All38_vepAF %>% mutate_at(pops, as.numeric)
 cisreg_All38_vepAF$maxAF = apply(cisreg_All38_vepAF[,c(pops)],1,max)
-summary(cisreg_All38_vepAF$maxAF)
+summary(as.numeric(cisreg_All38_vepAF$maxAF))
+summary(as.numeric(cisreg_All38_vepAF$gnomADg_AF))
 
 #create a new column listing the population with the max AF
 cisreg_All38_vepAF$maxAFpop = as.factor(colnames(cisreg_All38_vepAF[ ,pops])[max.col(cisreg_All38_vepAF[ ,pops])])
@@ -415,8 +424,9 @@ splice_impact02_IDs = unique(splice_impact02$Testset_ID)
 #annotation of the splicing file with yes or no, for potential splicing impact. 
 splice$spliceAI_impact02 <- ifelse(splice$Testset_ID %in% splice_impact02_IDs, "splicing", "NA")
 as.factor(splice$spliceAI_impact02) %>% summary()
+table(splice$spliceAI_impact02,splice$exp.group)
 
-#looking a little at what the splice impacts are - starting with the 'potential clinical splicing impact >0.2)
+#looking a little at what the splice impacts are - starting with the 'potential clinical splicing impact >=0.2)
 summary(splice_impact02)
 
 cisregAll38$spliceAI_impact02 <- as.factor(ifelse(cisregAll38$ID %in% splice_impact02_IDs, "PredSplicing", "no"))
@@ -466,7 +476,7 @@ summary(cisregAll38$refsetV)
 
 ##final save #################################
 
-#save FILTER annotation - last executed 26.10.23
+#save FILTER annotation - last executed 24.03.24
 write.table(cisregAll38, "temp/cisregall38_FILTER.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
 
 #Supplemental Table 8
@@ -477,8 +487,7 @@ supp8 = cisregAll38 %>% select("CHROM","POS","ID","REF","ALT","INFO",
                                       "Selected_gene_name", 23:32)
 names(supp8)[names(supp8) == "INFO"] = "Group"
 
-write.table(supp8, "Data/cisreg_allgrc38_supp8.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
-
+write.table(supp8, "temp/cisreg_allgrc38_supp8.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
 
 #check and save final FILTER annotation
 summary(refset)
@@ -494,16 +503,6 @@ write.table(refset, "temp/cisreg_refset_grc38.txt", sep = "\t", col.names = TRUE
 #select columns
 refset_vcf = refset[ ,c("CHROM","POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO")]
 
-#rename colnames if required
-#colnames(refset_vcf) = c("CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO")
-
-#create and fill vcf columns if not present 
-#refset_vcf$FILT = "."
-
-#replace blank cells with a ".", for e.g. in snpID with .
-#refset_vcf$ID[refset_vcf$ID==""] <- NA
-#refset_vcf$ID[is.na(refset_vcf$ID)] <- "."
-
 #sort by chromosome and then location
 refset_vcf = arrange(refset_vcf, CHROM, POS)
 
@@ -516,6 +515,3 @@ write.table(refset_vcf, "temp/cisreg_refset_grc38_vcf.txt", sep = "\t", col.name
 ##source script=ANNOT_FILTER.R
 ##reference=cisreg_refset_vcf
 #
-
-#####################################
-
