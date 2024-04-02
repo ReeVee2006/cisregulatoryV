@@ -1,6 +1,7 @@
 ##cis reg variant - control selection, from MANE start sites
 ##R code complemented by base annotation datasets in corresponding data folder - including source files for project and sources files for annotation, create a folder for the specific annotation set which is directd within specific folder in code 
-## Creating input ROI files for web/GUI based annotation - last update 14.04.23 RV
+## Creating input ROI files for web/GUI based annotation - 
+## Created by Rehan Villani - last update 14.04.23
 
 
 #install required packages
@@ -13,8 +14,6 @@ library(GenomicRanges)
 #library(liftOver)
 
 #--------------------------------------------
-#setwd 
-setwd("D:/cisreg_manuscript/SUPP")
 
 ## Load datasets to annotate. Cisreg variants, control and disease to combine dataset and create into VCF file
 #load disease-associated variant set
@@ -225,4 +224,3 @@ mane_crroi$crdis280323_gene <- ifelse(mane_crroi$Gene.name %in% crdis_genes, "ye
 mane_crroi$Gene.name %>% as.factor() %>% n_distinct()
 mane_crroi$crdis280323_gene %>% as.factor() %>% summary()
 write.table(mane_crroi,"Data/230414_manegenes_annot.txt",col.names= TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
-
