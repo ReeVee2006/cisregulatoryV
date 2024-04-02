@@ -1,142 +1,148 @@
-#### making graphs with thresholds cont/dis for each tool 
+####INFORMATION ####
+##19.03.2024 
+##Author Maddison Mackenzie
 
-##CADD_PHRED
+# load packages
+library(dplyr)
+library(readr)
+library(pheatmap)
 
-library(ggplot2)
+##Adding binary to df testset
+
+testset = read.table("Data/cisreg_testset_ANNOTcategories.txt", stringsAsFactors = TRUE , sep = "\t", header = TRUE)
+
 library(dplyr)
 
-# Adjust thresholds
-threshold1 <- 8
-threshold2 <- 10
-
-# Set colors for Control and Disease groups
-control_color <- "blue"
-disease_color <- "red"
-
-# Create the density plot
-ggplot(data = df, aes(x = CADD_PHRED, group = INFO, fill = INFO, color = INFO)) +
-  geom_density(alpha = 0.4) +
-  theme_minimal() +
-  labs(x = "CADD_PHRED", y = "Density", title = "Density Plot") +
-  scale_fill_manual(values = c("Control" = control_color, "Dis" = disease_color), name = "Group") +
-  scale_color_manual(values = c("Control" = control_color, "Dis" = disease_color), name = "Group") +
-  geom_vline(xintercept = c(threshold1, threshold2), linetype = "dotted", color = "black") +
-  annotate("text", x = threshold1, y = -0.01, label = as.character(threshold1), vjust = 1) +
-  annotate("text", x = threshold2, y = -0.01, label = as.character(threshold2), vjust = 1)
-
-
-ggplot(data=df, aes(x=CADD_PHRED, group=INFO, fill=INFO)) +
-  geom_density(adjust=1, alpha=.4)
-
-
-# Create the density plot
-ggplot(data = df, aes(x = CADD_PHRED, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1, alpha = 0.4) +
-  theme_minimal() +
-  labs(x = "CADD_PHRED", y = "Density", title = "CADD_PHRED Control and Disease density plot") +
-  scale_fill_manual(values = c("Cont" = "blue", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "blue", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(8, 10), linetype = "dotted", color = "black") +
-  annotate("text", x = 8, y = -0.01, label = "8", vjust = 0.5) +
-  annotate("text", x = 10, y = -0.01, label = "10", vjust = 0.5)
-
-# Create the density plot
-ggplot(data = df, aes(x = CADD_PHRED, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1.3, alpha = 0.4, na.rm = TRUE) +
-  theme_minimal() +
-  labs(x = "CADD_PHRED", y = "Denstiy", title = "CADD_PHRED Control and Disease Density Plot") +
-  scale_fill_manual(values = c("Cont" = "blue", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "blue", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(8, 10), linetype = "dashed", color = "black") +
-  geom_text(data = df[!is.na(df$CADD_PHRED) & df$CADD_PHRED == 8, ], x = 8, y = -0.01, label = "8", vjust = 1) +
-  geom_text(data = df[!is.na(df$CADD_PHRED) & df$CADD_PHRED == 10, ], x = 10, y = -0.01, label = "10", vjust = 1) +
-  ylim(0, max(density(df$CADD_PHRED, na.rm = TRUE)$y))
-
-#########################################################
-######Density plot START CODE CADD
-ggplot(data = df, aes(x = CADD_PHRED, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1.3, alpha = 0.4, na.rm = TRUE) +
-  theme_minimal() +
-  labs(x = "CADD_PHRED", y = "Density", title = "CADD_PHRED Control and Disease Density Plot") +
-  scale_fill_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(8, 10), linetype = "dashed", color = "black") +
-  geom_text(data = df[!is.na(df$CADD_PHRED) & df$CADD_PHRED == 8, ], x = 8, y = -0.01, label = "8", vjust = 1) +
-  geom_text(data = df[!is.na(df$CADD_PHRED) & df$CADD_PHRED == 10, ], x = 10, y = -0.01, label = "10", vjust = 1) +
-  ylim(0, max(density(df$CADD_PHRED, na.rm = TRUE)$y))
+testset <- testset %>%
+  mutate(CADD = case_when(
+    is.na(CADD_PHRED) ~ 3,
+    CADD_PHRED >= 10 ~ 2,
+    CADD_PHRED >= 8 ~ 1,
+    TRUE ~ 0
+  ),
+  LINSIGHT = case_when(
+    is.na(linsight_Lscore_hg19) ~ 3,
+    linsight_Lscore_hg19 > 0.24 ~ 2,
+    linsight_Lscore_hg19 >= 0.16 ~ 1,
+    TRUE ~ 0
+  ),
+  `FATHMM_MKL` = case_when(
+    is.na(fthmmkl_Non.Coding.Score_grc37) ~ 3,
+    fthmmkl_Non.Coding.Score_grc37 > 0.59 ~ 2,
+    fthmmkl_Non.Coding.Score_grc37 >= 0.39 ~ 1,
+    TRUE ~ 0
+  ),
+  `FATHMM_XF` = case_when(
+    is.na(fthmxf_Non.Coding.Score_grc38) ~ 3,
+    fthmxf_Non.Coding.Score_grc38 > 0.14 ~ 2,
+    fthmxf_Non.Coding.Score_grc38 >= 0.12 ~ 1,
+    TRUE ~ 0
+  ),
+  Eigen = case_when(
+    is.na(eigen_Eigen.raw) ~ 3,
+    eigen_Eigen.raw > 0.594 ~ 2,
+    eigen_Eigen.raw >= 0.394 ~ 1,
+    TRUE ~ 0
+  ),
+  REMM = case_when(
+    is.na(REMM_score) ~ 3,
+    REMM_score > 0.86 ~ 2,
+    REMM_score >= 0.8 ~ 1,
+    TRUE ~ 0
+  ))
 
 
-##Linsight
+####making the two DF for heatmaps 
+# Create disheatmap dataframe for rows with "Dis" in INFO column
+disheatmap <- subset(testset, INFO == "Dis")
+
+# Create contheatmap dataframe for rows with "Cont" in INFO column
+contheatmap <- subset(testset, INFO == "Cont")
+
+##disease heatmap
+# Define your color palette
+colors <- c("#0066CC", "#FFD700", "#FF3333", "#B0B0B0")
+
+# Select the columns of interest from your dataset (disheatmap)
+heatmap_data <- disheatmap %>% 
+  select(variant38, CADD, LINSIGHT, `FATHMM_MKL`, FATHMM_XF, Eigen, REMM)
+
+# Order the data based on CADD and REMM columns
+heatmap_data <- heatmap_data[order(heatmap_data$CADD, heatmap_data$REMM), ]
+
+# Extract the relevant columns for the heatmap
+heatmap_matrix <- as.matrix(heatmap_data[, c("CADD", "REMM", "FATHMM_MKL", "FATHMM_XF", "Eigen", "LINSIGHT")])
+
+# Remove row names for Y-axis
+rownames(heatmap_matrix) <- rep("", nrow(heatmap_matrix))
+
+# Create custom labels for x-axis
+colnames(heatmap_matrix) <- c("CADD", "REMM", "FATHMM-MKL", "FATHMM-XF", "Eigen", "LINSIGHT")
+
+# Create the heatmap using pheatmaps
+heatmap_dis <- pheatmap(
+  heatmap_matrix,
+  cluster_rows = FALSE, 
+  cluster_cols = FALSE,  
+  color = colors,       
+  main = "Disease",
+  fontsize_row = 8,      
+  fontsize_col = 10,     
+  angle_col = 45,       
+  scale = "none",        
+  border_color = NA,     
+  display_numbers = FALSE,  
+  legend = TRUE,         
+  YAxis = FALSE          
+)
+
+#final figure
+
+png(file="hm_dis.png")
+heatmap_dis
+dev.off()
 
 
-ggplot(data = df, aes(x = linsight_Lscore_hg19, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1.3, alpha = 0.4, na.rm = TRUE) +
-  theme_minimal() +
-  labs(x = "LINSIGHT Score", y = "Density", title = "LINSIGHT Scores Control and Disease Density Plot") +
-  scale_fill_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(0.16, 0.24), linetype = "dashed", color = "black") +
-  geom_text(data = df[!is.na(df$linsight_Lscore_hg19) & df$linsight_Lscore_hg19 == 0.16, ], x = 0.16, y = -0.01, label = "0.16", vjust = 1) +
-  geom_text(data = df[!is.na(df$linsight_Lscore_hg19) & df$linsight_Lscore_hg19 == 0.24, ], x = 0.24, y = -0.01, label = "0.24", vjust = 1) +
-  scale_y_continuous(limits = c(0, NA))
+#####Control heatmap 
 
+# Define your color palette
+colors <- c("#0066CC", "#FFD700", "#FF3333", "#B0B0B0")
 
-##fathmm-mkl
+# Select the columns of interest from your dataset
+heatmap_data <- contheatmap%>% 
+  select(variant38, CADD, LINSIGHT, `FATHMM_MKL`, FATHMM_XF, Eigen, REMM)
 
+# Order the data based on CADD and REMM columns
+heatmap_data <- heatmap_data[order(heatmap_data$CADD, heatmap_data$REMM), ]
 
-ggplot(data = df, aes(x = fthmmkl_Non.Coding.Score_hg19, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1.3, alpha = 0.4, na.rm = TRUE) +
-  theme_minimal() +
-  labs(x = "FATHMM-MKL NonCoding Score", y = "Density", title = "FATHMM-MKL NonCoding Score Control and Disease Density Plot") +
-  scale_fill_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(0.39, 0.59), linetype = "dashed", color = "black") +
-  geom_text(data = df[!is.na(df$fthmmkl_Non.Coding.Score_hg19) & df$fthmmkl_Non.Coding.Score_hg19 == 0.39, ], x = 0.39, y = -0.01, label = "0.39", vjust = 1) +
-  geom_text(data = df[!is.na(df$fthmmkl_Non.Coding.Score_hg19) & df$fthmmkl_Non.Coding.Score_hg19 == 0.59, ], x = 0.59, y = -0.01, label = "0.59", vjust = 1) +
-  ylim(0, max(density(df$fthmmkl_Non.Coding.Score_hg19, na.rm = TRUE)$y))
+# Extract the relevant columns for the heatmap
+heatmap_matrix <- as.matrix(heatmap_data[, c("CADD", "REMM", "FATHMM_MKL", "FATHMM_XF", "Eigen", "LINSIGHT")])
 
-##FATHMM-XF 
+# Remove row names for Y-axis
+rownames(heatmap_matrix) <- rep("", nrow(heatmap_matrix))
 
-ggplot(data = df, aes(x = fthmxf_Non.Coding.Score_hg19, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1.3, alpha = 0.4, na.rm = TRUE) +
-  theme_minimal() +
-  labs(x = "FATHMM-XF NonCoding Score", y = "Density", title = "FATHMM-XF NonCoding Score Control and Disease Density Plot") +
-  scale_fill_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(0.12, 0.14), linetype = "dashed", color = "black") +
-  geom_text(data = df[!is.na(df$fthmxf_Non.Coding.Score_hg19) & df$fthmxf_Non.Coding.Score_hg19 == 0.12, ], x = 0.12, y = -0.01, label = "8", vjust = 1) +
-  geom_text(data = df[!is.na(df$fthmxf_Non.Coding.Score_hg19) & df$fthmxf_Non.Coding.Score_hg19 == 0.14, ], x = 0.14, y = -0.01, label = "10", vjust = 1) +
-  ylim(0, max(density(df$fthmxf_Non.Coding.Score_hg19, na.rm = TRUE)$y))
+# Create custom labels for x-axis
+colnames(heatmap_matrix) <- c("CADD", "REMM", "FATHMM-MKL", "FATHMM-XF", "Eigen", "LINSIGHT")
 
+# Create the heatmap using pheatmaps
+heatmap_cont <- pheatmap(
+  heatmap_matrix,
+  cluster_rows = FALSE, 
+  cluster_cols = FALSE, 
+  color = colors,        
+  main = "Control",
+  fontsize_row = 8,      
+  fontsize_col = 10,    
+  angle_col = 45,       
+  scale = "none",       
+  border_color = NA,     
+  display_numbers = FALSE,  
+  legend = TRUE,         
+  YAxis = FALSE          
+)
 
+#final figure
 
-##Eigen 
-ggplot(data = df, aes(x = eigen_Eigen.raw, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1.3, alpha = 0.4, na.rm = TRUE) +
-  theme_minimal() +
-  labs(x = "Eigen raw Score", y = "Density", title = "Eigen raw Scores Control and Disease Density Plot") +
-  scale_fill_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(0.394, 0.594), linetype = "dashed", color = "black") +
-  geom_text(data = df[!is.na(df$eigen_Eigen.raw) & df$eigen_Eigen.raw == 0.394, ], x = 0.394, y = -0.01, label = "8", vjust = 1) +
-  geom_text(data = df[!is.na(df$eigen_Eigen.raw) & df$eigen_Eigen.raw == 0.594, ], x = 0.594, y = -0.01, label = "10", vjust = 1) +
-  ylim(0, max(density(df$eigen_Eigen.raw, na.rm = TRUE)$y))
-
-
-##REMM
-
-
-ggplot(data = df, aes(x = REMM_score, group = INFO, fill = INFO)) +
-  geom_density(adjust = 1.3, alpha = 0.4, na.rm = TRUE) +
-  theme_minimal() +
-  labs(x = "REMM Score", y = "Density", title = "REMM Score Control and Disease Density Plot") +
-  scale_fill_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  scale_color_manual(values = c("Cont" = "#00AABB", "Dis" = "red"), labels = c("Control", "Disease"), name = "Group") +
-  geom_vline(xintercept = c(0.8, 0.86), linetype = "dashed", color = "black") +
-  geom_text(data = df[!is.na(df$REMM_score) & df$REMM_score == 0.8, ], x = 0.8, y = -0.01, label = "8", vjust = 1) +
-  geom_text(data = df[!is.na(df$REMM_score) & df$REMM_score == 0.86, ], x = 0.86, y = -0.01, label = "10", vjust = 1) +
-  scale_y_continuous(limits = c(0, NA), expand = c(0, 0))
-
-
-
-
+png(file="hm_cont.png")
+heatmap_cont
+dev.off()
