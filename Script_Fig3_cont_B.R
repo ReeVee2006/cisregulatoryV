@@ -10,7 +10,6 @@ library(ggpubr)
 library(cowplot)
 
 #setwd 
-setwd("D:/cisreg_manuscript/SUPP")
 
 #load variants - 316425 variants - from cont partA script
 afcons = read.table("testset_vepafcons.txt",sep = "\t", header = TRUE)
@@ -207,7 +206,7 @@ plot_grid(pdot, gdot, psum, gsum,
                     rel_heights = c(1,1,1,1),
                     ncol = 2, nrow = 2)
 
-ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig3_maxAFcons_3IQR.png", width = 12, height = 10, device='png', dpi=1200)
+ggsave(path = "Data/", filename = "Fig3_maxAFcons_3IQR.png", width = 12, height = 10, device='png', dpi=1200)
 
 #--------------------------------------------------------
 #select control set
@@ -232,14 +231,9 @@ gr_disroi_ts = subsetByOverlaps(gr_ts, gr_matchedroi)
 disroi_contV_ts = as(gr_disroi_ts, "data.frame")
 head(disroi_contV_ts)
 
-write.table(disroi_contV_ts, "temp/disroi_contV_ts.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
-
 #SUPP table 6 - variants selects from maxAF bin 0.00002 - 0.0001
 colnames(disroi_contV_ts)
 disroi_contV_ts$Contset_ID = paste("CRcont",disroi_contV_ts$contsetid,sep ="")
 contV_ts = disroi_contV_ts %>% select("seqnames","start","ID","REF","ALT","QUAL","FILTER","Conservation","c_phyloP100","maxAF","bin", "Contset_ID")
 names(contV_ts)[names(contV_ts) == "start"] = "POS"
 names(contV_ts)[names(contV_ts) == "seqnames"] = "CHROM"
-
-#save matched control variants
-write.table(contV_ts, "temp/supptable_contv.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
