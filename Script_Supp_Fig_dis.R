@@ -367,4 +367,3 @@ consplot = ggplot(cisregANNOT_final, aes(x = VEP_Consequence_adj)) + geom_bar() 
 plot_grid(transct, consplot, align = "h", axis = "b", rel_widths = c(1, 1.3),labels = c("A", "B"))
 
 ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig_dis576.png", width = 9, height = 4, device='png', dpi=600)
-
