@@ -1,0 +1,902 @@
+##cis reg variants - 
+##this script is intended to look at the overlap in the reference/5prime variant set and REMM
+##looking to see if the REMM scores are biased, does re-calibration with 'non-REMM variants' work
+##Creating input files with web/GUI based annotations 
+##script started 31.01.2024
+##last executed 
+
+library(tidyverse)
+library(GenomicRanges)
+library(rtracklayer)
+library(ggpubr)
+library(cowplot)
+library(grid)
+
+#set up files--------------------------------------------
+#setwd 
+setwd("D:/cisreg_project/REMM")
+
+## Load datasets-Cisreg variants, control and disease to combine dataset and create into VCF file
+#load disease-associated variant set
+cisregDraw = read.table("D:/cisreg_manuscript/SUPP/Data/Supplemental_DisVar.txt", header= TRUE, sep = "\t")
+#load control variant set
+cisregCraw = read.table("D:/cisreg_manuscript/SUPP/Data/Supplemental_ContVar.txt", header= TRUE, sep = "\t")
+
+#load variant annotation tables from manuscript - variant annotations on all var set
+cisregV_filter = read.table("D:/cisreg_project/REMM/Source_data/Supplemental_Table8.txt", header= TRUE, sep = "\t")
+head(cisregV_filter)
+
+#load variant annotation tables from manuscript - variant annotations on reference set
+cisregV_annot = read.table("D:/cisreg_project/REMM/Source_data/Supplemental_Table10.txt", header= TRUE, sep = "\t")
+cisregV_annot$Group = as.factor(ifelse(cisregV_annot$Group == "Cont", "Control", "Disease"))
+head(cisregV_annot)
+
+#create list of genes represented in disease variant set
+n_distinct(cisregDraw$Source_Reported_GeneName)
+n_distinct(cisregDraw$Selected_gene_name)
+
+#--base-file-annotation-tool-input-vcf---------------------------------------------------------------------
+## create a combined dataset with C and D variants labelled in INFO column
+#select Control vcf columns
+colnames(cisregCraw)
+cisregCraw
+cisregCont = cisregCraw[ ,c("CHROM","POS","contsetid","REF","ALT","QUAL","FILTER")]
+cisregCont = cisregCont %>% filter(FILTER == "PASS")
+cisregCont$contsetid = paste("CRcont",cisregCont$contsetid, sep = "")
+names(cisregCont)[names(cisregCont) == "contsetid"] <- "ID"
+cisregCont$INFO = "Cont"
+
+#select disease vcf columns, IDs with project identifiers CRD
+cisregDis = cisregDraw[ ,c("Chr_GRCh38","Location_GRCh38","Testset_ID","Reference_Allele","Alternative_Allele")]
+colnames(cisregDis) = c("CHROM", "POS", "ID", "REF", "ALT")
+
+#add vcf columns to disease set
+cisregDis$QUAL = "."
+cisregDis$FILTER = "."
+cisregDis$INFO = "Dis"
+
+#add chr to the CHROM column of disease for vcf ,depending on input file required
+#cisregDis$CHROM = paste("chr",cisregDis$CHROM,sep ="")
+#remove chr from CHROM column - as per vcf, or depending on input file required
+cisregCont$CHROM = str_replace(cisregCont$CHROM, "chr", "")
+
+#combine cont and disease
+cisregAll38 = rbind(cisregCont,cisregDis)
+
+#sort by chromosome and then location
+cisregAll38 = arrange(cisregAll38, CHROM, POS)
+cisregAll38_vcf = cisregAll38
+cisregAll38_vcf$QUAL = "."
+cisregAll38_vcf$FILTER = "."
+cisregAll38_vcf$INFO = "."
+
+#--generate--vcf-for-annotation-tool-input---------------------------------
+# save a copy of the vcf file.
+write.table(cisregAll38_vcf, "temp/cisreg_all38_grc38_vcf.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
+
+# add the header to align with required vcf file format
+##fileformat=VCFv4.2
+##fileDate= <date>
+##source script=ANNOT_FILTER.R
+##reference=cisregAll38_vcf
+#
+
+#--building-base-file------------------------------------------
+#add location and variant columns 
+cisregAll38$location38 = paste(cisregAll38$CHROM, cisregAll38$POS, sep = ":")
+cisregAll38$variant38 = paste(cisregAll38$CHROM, cisregAll38$POS, cisregAll38$REF, cisregAll38$ALT, sep = ":")
+cisregall38loc = cisregAll38$location38
+cisregall38var = cisregAll38$variant38
+
+summary(cisregAll38$Group) 
+
+#create a list of control and disease location and variants
+cisreg_dis = cisregAll38[ cisregAll38$INFO =="Dis", ]
+cisreg_cont = cisregAll38[cisregAll38$INFO =="Cont", ] 
+
+###############looking at the cisreg calibration SOURCE dataset - raw data - ###################
+cisregV_source = read.delim("D:/cisreg_project/REMM/Source_data/Supplemental_Table3.txt", header= TRUE)
+summary(cisregV_source)
+colnames(cisregV_source)
+cisregV_source[ ,c(13,15:19)] <- lapply(cisregV_source[ ,c(13,15:19)], as.factor)
+summary(cisregV_source)
+cisregV_s_smedley = filter(cisregV_source, Smedley == "1")
+
+###############looking at the REMM dataset - raw data - ########################################
+# read in the relevant tables from smedley supp, this would be 
+smedley_5pUTR = read.table("D:/cisreg_project/REMM/smedley/data/1-s2.0-S0002929716302786-mmc2_smedley_5p UTR Mutations.txt", header= TRUE, sep = "\t")
+smedley_promoter = read.table("D:/cisreg_project/REMM/smedley/data/1-s2.0-S0002929716302786-mmc2_smedley_Promoter Mutations.txt", header= TRUE, sep = "\t")
+
+#select the relevant columns, join variant lists and determine the VCF variant key for overlap
+head(smedley_5pUTR)
+head(smedley_promoter)
+smedley_5p = rbind((select(smedley_5pUTR, c(1:4,6))),(select(smedley_promoter, c(1:4,6))))
+smedley_5p$CHROM =str_replace(smedley_5p$Chr,"chr", "")
+smedley_5p$location37 = paste(smedley_5p$CHROM, smedley_5p$Position, sep = ":")
+#adding location 37 in slightly different format to match original in source table but also so diff to 38locations
+smedley_5p$variant37ref = paste(smedley_5p$location37, smedley_5p$Ref, sep = "")
+smedley_5p$variant37 = paste(smedley_5p$variant37ref, smedley_5p$Alt, sep = ">")
+head(smedley_5p)
+
+#check overlap our sourcedata variants with original smedley list
+setdiff(smedley_5p$variant37,cisregV_s_smedley$GRCh37variant)
+
+#add in ALL smedley variants (full dev set for REMM tool)
+smedley_3pUTR = read.table("D:/cisreg_project/REMM/smedley/data/1-s2.0-S0002929716302786-mmc2_smedley_3p UTR Mutations.txt", header= TRUE, sep = "\t")
+smedley_enhancer = read.table("D:/cisreg_project/REMM/smedley/data/1-s2.0-S0002929716302786-mmc2_smedley_Enhancer Mutations.txt", header= TRUE, sep = "\t")
+smedley_imprinting = read.table("D:/cisreg_project/REMM/smedley/data/1-s2.0-S0002929716302786-mmc2_smedley_Imprinting Control Region Mutations.txt", header= TRUE, sep = "\t")
+smedley_mirna = read.table("D:/cisreg_project/REMM/smedley/data/1-s2.0-S0002929716302786-mmc2_smedley_MicroRNA Gene Mutations.txt", header= TRUE, sep = "\t")
+smedley_rna = read.table("D:/cisreg_project/REMM/smedley/data/1-s2.0-S0002929716302786-mmc2_smedley_RNA Gene Mutations.txt", header= TRUE, sep = "\t")
+
+#create a data table combining all smedley tables
+#could replace  this with a for loop 
+smedley_all = rbind((select(smedley_5pUTR, c("Chr","Position","Ref","Alt","Gene")) %>% add_column(category = "smedley_5pUTR")),
+                    (select(smedley_promoter, c("Chr","Position","Ref","Alt","Gene"))%>% add_column(category = "smedley_promoter")),
+                    (select(smedley_3pUTR, c("Chr","Position","Ref","Alt","Gene"))%>% add_column(category = "smedley_3pUTR")),
+                    (select(smedley_enhancer, c("Chr","Position","Ref","Alt","Gene"))%>% add_column(category = "smedley_enhancer")),
+                    (select(smedley_imprinting, c("Chr","Position","Ref","Alt","Gene"))%>% add_column(category = "smedley_imprinting")),
+                    (select(smedley_mirna, c("Chr","Position","Ref","Alt","Gene"))%>% add_column(category = "smedley_mirna")),
+                    (select(smedley_rna, c("Chr","Position","Ref","Alt","Gene"))%>% add_column(category = "smedley_rna")))
+
+smedley_all$CHROM =str_replace(smedley_all$Chr,"chr", "")
+smedley_all$location37 = paste(smedley_all$CHROM, smedley_all$Position, sep = ":")
+
+#adding location 37 in slightly different format to match original in source table but also so diff to 38locations
+smedley_all$variant37ref = paste(smedley_all$location37, smedley_all$Ref, sep = "")
+smedley_all$variant37 = paste(smedley_all$variant37ref, smedley_all$Alt, sep = ">")
+head(smedley_all)
+
+###############overlap REMM variants with the variants in our test set##########################
+#looking to see what overlap there is in our dataset vs REMM test set
+setdiff(smedley_5p$variant37,cisregV_s_smedley$GRCh37variant)
+setdiff(smedley_all$variant37,cisregV_source$GRCh37variant)
+
+setdiff(smedley_all$variant37,cisregV_annot$variant37)
+setdiff(cisregV_annot$variant37,smedley_all$variant37)
+
+
+cisregV_annot$REMM_training_set_variant = ifelse(cisregV_annot$variant37 %in% smedley_all$variant37, "IN", "OUT")
+summary(cisregV_annot$REMM_training_set_variant)
+cisregV_annot$REMM_training_set = paste(cisregV_annot$REMM_training_set_variant, cisregV_annot$Group, sep = "_")
+summary(as.factor(cisregV_annot$REMM_training_set))
+table(cisregV_annot$REMM_training_set_variant,cisregV_annot$Group)
+
+#creating new variant sets with and without smedley/REMM variants
+cisreg_annot_OUTsmedley = cisregV_annot[cisregV_annot$REMM_training_set_variant == "OUT", ]
+cisreg_annot_INsmedley = cisregV_annot[cisregV_annot$REMM_training_set_variant == "IN", ]
+
+#save data
+write.table(cisreg_annot_OUTsmedley, "temp/cisreg_outsmedleyVar_grc38.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
+write.table(cisreg_annot_INsmedley, "temp/cisreg_insmedleyVar_grc38_vcf.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
+
+
+##############analysing the annotations from variants in and out of smedley dataset
+#non smedley/REMM
+#summary stats of the CADD Phred by group in NON-smedley variants
+colnames(cisreg_annot_OUTsmedley)
+cisreg_annot_OUTsmedley %>% group_by(Group) %>% 
+  summarize(min = min(CADD_PHRED),
+            q1 = quantile(CADD_PHRED, 0.25),
+            median = median(CADD_PHRED),
+            mean = mean(CADD_PHRED),
+            q3 = quantile(CADD_PHRED, 0.75),
+            max = max(CADD_PHRED))
+
+#graphing CADD score control versus disease CADD_PHRED - WITH calibrated cisreg thresholds
+ggplot(cisreg_annot_OUTsmedley, aes(Group, CADD_PHRED))+
+  geom_boxplot() + geom_hline(yintercept = 8) + geom_hline(yintercept = 10)
+
+colnames(cisreg_annot_OUTsmedley)
+#summary stats of the CADD Phred by group in REMM/smedley variants
+colnames(cisreg_annot_INsmedley)
+cisreg_annot_INsmedley %>% group_by(Group) %>% 
+  summarize(min = min(CADD_PHRED),
+            q1 = quantile(CADD_PHRED, 0.25),
+            median = median(CADD_PHRED),
+            mean = mean(CADD_PHRED),
+            q3 = quantile(CADD_PHRED, 0.75),
+            max = max(CADD_PHRED))
+
+#compare to total set
+cisregV_annot %>% group_by(Group) %>% 
+  summarize(min = min(CADD_PHRED),
+            q1 = quantile(CADD_PHRED, 0.25),
+            median = median(CADD_PHRED),
+            mean = mean(CADD_PHRED),
+            q3 = quantile(CADD_PHRED, 0.75),
+            max = max(CADD_PHRED))
+
+#graphing CADD score control versus disease CADD_PHRED - WITH calibrated cisreg thresholds
+ggplot(cisreg_annot_INsmedley, aes(Group, CADD_PHRED))+
+  geom_boxplot() + geom_hline(yintercept = 8) + geom_hline(yintercept = 10)
+
+#graph of CADD_PHRED scores with smedley/REMM seperated
+ggplot(cisregV_annot, aes(Group, CADD_PHRED, fill = REMM_training_set_variant))+ 
+  geom_boxplot() + labs(x = "", y = "CADD_PHRED")+
+  theme(legend.position="right")+
+  scale_fill_manual(values=c("#F8766D","#00BFC4","#619CFF"), na.value= "#999999")+
+  geom_boxplot() + geom_hline(yintercept = 8) + geom_hline(yintercept = 10)
+
+ggplot(cisregV_annot, aes(Group, REMM_score, fill = REMM_training_set_variant))+ 
+  geom_boxplot() + labs(x = "", y = "REMM")+
+  theme(legend.position="right")+
+  scale_fill_manual(values=c("#F8766D","#00BFC4","#619CFF"), na.value= "#999999")+
+  geom_boxplot() + geom_hline(yintercept = 0.8) + geom_hline(yintercept = 0.86)
+
+#t-test on 
+
+#calculating the LR for REMM categories on dataset##########################
+####AS PER WHOLE DATASET CALIBRATION# ##
+#cisreg_annot_OUTsmedley - has REMM score bin already calculated
+colnames(cisreg_annot_OUTsmedley)
+#determine LR for each category, plus CI low and LR CIhigh
+
+#creating new groups
+
+#dataset details
+summary(as.factor(cisreg_annot_OUTsmedley$Group))
+
+#need to convert this to a table
+summary(as.factor(cisregV_annot$REMM_testbin))
+summary(as.factor(cisreg_annot_OUTsmedley$REMM_testbin))
+
+#REMM_score
+cisreg_annot_OUTsmedley$REMM_score = as.numeric(cisreg_annot_OUTsmedley$REMM_score)
+cisreg_annot_OUTsmedley %>% group_by(REMM_scorebin) %>% summary()
+
+#contingency table of exp.group vs the score bin 
+table(cisreg_annot_OUTsmedley$Group,cisreg_annot_OUTsmedley$REMM_scorebin)
+
+#create a summary stats
+#summary stats of the REMM by group
+cisreg_annot_OUTsmedley %>% group_by(Group) %>% 
+  summarize(min = min(REMM_score),
+            q1 = quantile(REMM_score, 0.25),
+            median = median(REMM_score),
+            mean = mean(REMM_score),
+            q3 = quantile(REMM_score, 0.75),
+            max = max(REMM_score))
+
+#summary stats of the REMM by group
+cisreg_annot_INsmedley %>% group_by(Group) %>% 
+  summarize(min = min(REMM_score),
+            q1 = quantile(REMM_score, 0.25),
+            median = median(REMM_score),
+            mean = mean(REMM_score),
+            q3 = quantile(REMM_score, 0.75),
+            max = max(REMM_score))
+
+#summary stats of the REMM by group
+cisregV_annot %>% group_by(Group) %>% 
+  summarize(min = min(REMM_score),
+            q1 = quantile(REMM_score, 0.25),
+            median = median(REMM_score),
+            mean = mean(REMM_score),
+            q3 = quantile(REMM_score, 0.75),
+            max = max(REMM_score))
+
+#is the difference in means/medians significant
+cisregV_annot_dis = cisregV_annot[cisregV_annot$Group == "Disease", ]
+cisreg_annot_INsmedley_dis = cisreg_annot_INsmedley[cisreg_annot_INsmedley$Group == "Disease", ]
+cisreg_annot_OUTsmedley_dis = cisreg_annot_OUTsmedley[cisreg_annot_OUTsmedley$Group == "Disease", ]
+cisregV_annot_cont = cisregV_annot[cisregV_annot$Group == "Control", ]
+
+#REMM_cont
+qqnorm(cisregV_annot_cont$REMM_score, pch = 1, frame = FALSE)
+qqline(cisregV_annot_cont$REMM_score, col = "steelblue", lwd = 2)
+#REMM_dis_IN smedley
+qqnorm(cisregV_annot_cont$REMM_score, pch = 1, frame = FALSE)
+qqline(cisregV_annot_cont$REMM_score, col = "steelblue", lwd = 2)
+#REMM_diseaseV_OUTsmedley
+qqnorm(cisregV_annot_cont$REMM_score, pch = 1, frame = FALSE)
+qqline(cisregV_annot_cont$REMM_score, col = "steelblue", lwd = 2)
+
+#large sample number means shapiro-wilk not valid, scores however clearly not parametric
+#non-parametric  wilcox test used (MannU)
+#REMM
+#select disease var Only and see if mean of REMMscores is different between in and out of smedley groups
+colnames(cisregV_annot)
+wilcox.test(formula = REMM_score ~ REMM_training_set_variant, data = cisregV_annot_dis)
+#do I need to see if the mean of entire group is different to the mean of variants OUT of smedley?
+#wilcox.test(formula = REMM_score ~ REMMvar, data = cisregV_annot_dis
+
+#######graphing REMM score control versus disease PHRED################
+ggplot(cisreg_annot_OUTsmedley, aes(Group, REMM_score))+
+  geom_boxplot() + geom_hline(yintercept = 0.86) + geom_hline(yintercept = 0.8)
+
+#graphing test score control versus disease  - WITH THRESHOLD 8 and 10 indicated
+ggplot(cisreg_annot_OUTsmedley, aes(REMM_score, fill = Group))+
+  geom_density(position = "identity", alpha = 0.2)+
+  geom_vline(xintercept = 0.80) + geom_vline(xintercept = 0.86)+ 
+  theme(legend.title = element_blank())+
+  scale_fill_manual(values=c("#00BFC4","#F8766D","#9999CC"), na.value="#999999")
+
+#graphing test score control versus disease  - WITH THRESHOLD 8 and 10 indicated
+cisreg_annot_INsmedley_all = rbind(cisreg_annot_INsmedley, cisregV_annot_cont)
+ggplot(cisreg_annot_INsmedley_all, aes(REMM_score, fill = Group))+
+  geom_density(position = "identity", alpha = 0.2)+
+  geom_vline(xintercept = 0.80) + geom_vline(xintercept = 0.86)+ 
+  theme(legend.title = element_blank())+
+  scale_fill_manual(values=c("#00BFC4","#F8766D","#9999CC"), na.value="#999999")
+
+
+#extract a table of REMM_score LR, LR CI low and LR CIhigh
+#creating new groups
+colnames(cisreg_annot_OUTsmedley)
+
+#need to convert this to a table
+summary(as.factor(cisreg_annot_OUTsmedley$REMM_score))
+cisreg_annot_OUTsmedley %>% select("Group","REMM_score") %>% table()
+
+#selecting the relevant results for the test evaluation from scores - categories designated in previous script based on scores/process
+#test
+test = "REMM"
+df_test2 = cisreg_annot_OUTsmedley[!is.na(cisreg_annot_OUTsmedley$REMM_scorebin), ] %>% select(., "Group","REMM_scorebin")
+
+table(df_test2)
+summary(df_test2)
+#Control n in test set (all variants)
+sum(df_test2$Group=="Control")
+#disease n in test set (all variants)
+sum(df_test2$Group=="Disease")
+
+#How many variants in test set scored
+#Controlrol n
+test2_cont_n = sum(df_test2$Group=="Control")
+
+#disease n
+test2_dis_n = sum(df_test2$Group=="Disease")
+
+#test n
+test2_all_n = nrow(df_test2)
+
+#test1-evaluation numbers
+
+#Calculate n True Pos (Event pos)
+test2_TP = df_test2 %>% filter(Group=="Disease" & REMM_scorebin == "score_high") %>% count()
+print(test2_TP)
+
+#calculate n True neg (no event neg)
+test2_TN = df_test2 %>% filter(Group=="Control" & REMM_scorebin == "score_low") %>% count()
+print(test2_TN)
+
+#calculate false positive (no event pos)
+test2_FP = df_test2 %>% filter(Group=="Control" & REMM_scorebin == "score_high") %>% count()
+print(test2_FP)
+
+#calculate false negative (event neg)
+test2_FN = df_test2 %>% filter(Group=="Disease" & REMM_scorebin == "score_low") %>% count()
+print(test2_FN)
+
+
+#Calculate Uncertain (event no call)
+test2_UNP = df_test2 %>% filter(Group=="Disease" & REMM_scorebin == "score_no_call") %>% count()
+
+#Calculate Uncertain (no event event no call )
+test2_UNN = df_test2 %>% filter(Group=="Control" & REMM_scorebin == "score_no_call") %>% count()
+
+# calculate sensitivity
+test2_sens = test2_TP/(test2_TP + test2_FN)
+print(test2_sens)
+
+# cal specificity
+test2_spec = test2_TN/(test2_TN + test2_FP)
+print(test2_spec)
+
+#
+# calculate the LR for pos +
+#lr_pos(TP, FP, FN, TN) - cmd using package
+#sens/(1- spec) - interpretation of haldane fitting with wiggins
+# LR method used in brnich - prop Control variants pred path/prop disease variants predicted pathogenic
+test2_LRpos = (test2_TP/test2_dis_n)/(test2_FP/test2_cont_n)
+print(test2_LRpos)
+
+#calc 95% CI for the LR+
+#var(logLR) for the LR -
+test2_varLRpos = (1/test2_TN-1/test2_cont_n)+(1/test2_FN-1/test2_dis_n)
+print(test2_varLRpos)
+
+#calc low CI for the LR-
+exp(log(test2_LRpos) - 1.96 * sqrt(test2_varLRpos))
+
+#calc high CI for the LR-
+exp(log(test2_LRpos) + 1.96 * sqrt(test2_varLRpos))
+
+# calculate the LR for negative -
+#lr_neg(TP, FP, FN, TN)
+#(1-sens)/spec
+## LR method used in brnich - prop cont variants pred path/prop disease variants predicted pathogenic
+test2_LRneg = (test2_FN/test2_dis_n)/(test2_TN/test2_cont_n)
+print(test2_LRneg)
+
+#std error of LR
+test2_seLRneg = sqrt(((1/test2_FN)-(1/test2_dis_n))+((1/test2_TN)-(1/test2_cont_n)))
+
+#var(logLR) for the LR -
+test2_varLRneg = (1/test2_TN-1/test2_cont_n)+(1/test2_FN-1/test2_dis_n)
+print(test2_varLRneg)
+
+#calc low CI for the LR-
+exp(log(test2_LRneg) - 1.96 * sqrt(test2_varLRneg))
+
+#calc high CI for the LR-
+exp(log(test2_LRneg) + 1.96 * sqrt(test2_varLRneg))
+
+#
+# calculate the LR for no call
+test2_LRnocall = (test2_UNP/test2_dis_n)/(test2_UNN/test2_cont_n)
+print(test2_LRnocall)
+
+#var(logLR) for the LR no call
+test2_varLRnocall = (1/test2_UNN-1/test2_cont_n)+(1/test2_UNP-1/test2_dis_n)
+print(test2_varLRnocall)
+
+#calc low CI for the LR no call
+exp(log(test2_LRnocall) - 1.96 * sqrt(test2_varLRnocall))
+
+#calc high CI for the LR no call
+exp(log(test2_LRnocall) + 1.96 * sqrt(test2_varLRnocall))
+
+#DEV building the calculations of LR into a row/datatable
+#creating
+#create 1st value with test type
+#create 2nd value with test group ()
+#next three columns as LR, var, low CI and high CI
+
+REMM_pos = c(test = test,
+         group = "LRpos",
+         LR = as.numeric(test2_LRpos), 
+         Var = as.numeric(test2_varLRpos), 
+        CI_low = as.numeric(exp(log(test2_LRpos) - 1.96 * sqrt(test2_varLRpos))), 
+        CI_high = as.numeric(exp(log(test2_LRpos) + 1.96 * sqrt(test2_varLRpos))))
+
+REMM_int = c(test = test,
+           group = "LRuninf",
+           LR = as.numeric(test2_LRnocall), 
+           Var = as.numeric(test2_varLRnocall), 
+           CI_low = as.numeric(exp(log(test2_LRnocall) - 1.96 * sqrt(test2_varLRnocall))), 
+           CI_high = as.numeric(exp(log(test2_LRnocall) + 1.96 * sqrt(test2_varLRnocall))))
+
+REM_neg = c(test = test,
+           group = "LRneg",
+           LR = as.numeric(test2_LRneg), 
+           Var = as.numeric(test2_varLRneg), 
+        CI_low = as.numeric(exp(log(test2_LRneg) - 1.96 * sqrt(test2_varLRneg))), 
+        CI_high = as.numeric(exp(log(test2_LRneg) + 1.96 * sqrt(test2_varLRneg))))
+
+REMM_results = type.convert(as.data.frame(rbind(REMM_pos,REMM_int,REMM_neg), row.names = FALSE), as.is = TRUE)
+REMM_results
+
+
+#############################################
+#RECALIBRATION
+#save remm datatable for wiggins analysis
+colnames(cisreg_annot_OUTsmedley)
+cisreg_smedout_REMM_wiggins = cisreg_annot_OUTsmedley[ , c("ID","Group","REMM_score")]
+
+#converting INFO/Group column into binary o-1 for wiggins tool
+cisreg_smedout_REMM_wiggins$observed.event = if_else(cisreg_smedout_REMM_wiggins$Group == "Cont", 0,1)
+
+#save files - csv for wiggins tool
+write.csv(cisreg_smedout_REMM_wiggins, "temp/cisreg_smedout_remm_wigginsinput.csv", row.names = FALSE)
+
+#Cutpoints, 0.76 and 0.88
+
+#########################################################
+#performance of new cut points
+#recalibrated - alternative cut-off (minus REMM training variants) 
+#Cutpoints, 0.76 and 0.88
+
+#need to convert this to a table
+summary(as.factor(cisreg_annot_OUTsmedley$REMM_score))
+
+cisreg_annot_OUTsmedley %>% select("Group","REMM_score") %>% table()
+
+#--adding NEW (smedleyvariantsout) ReMM categories--------------------------------------------------------
+
+#REMM - score designated via REMM_score
+test = "REMM2"
+#thresholds - defined based on the independent calibration via wiggins scores
+REMM2_upper_threshold = 0.76
+REMM2_lower_threshold = 0.88
+
+#designate categories(via bins) for each testset -NEW cutoffs
+summary(cisreg_annot_OUTsmedley$REMM_score)
+REMM2_binvalues = c((min(na.omit(cisreg_annot_OUTsmedley$REMM_score))), REMM2_lower_threshold, REMM2_upper_threshold, (max(na.omit(cisreg_annot_OUTsmedley$REMM_score))))
+binlabels = c("score_low","score_int","score_high")
+cisreg_annot_OUTsmedley$REMM2_scorebin  = cut(cisreg_annot_OUTsmedley$REMM_score, breaks = REMM2_binvalues, labels = binlabels, include.lowest = TRUE)
+cisreg_annot_OUTsmedley %>% group_by(REMM2_scorebin) %>% summary()
+summary(as.factor(cisreg_annot_OUTsmedley$REMM2_scorebin))
+
+#create 6 bins for REMM score -NEW cutoffs
+cisreg_annot_OUTsmedley$REMM2_testbin  = as.factor(paste(cisreg_annot_OUTsmedley$Group,cisreg_annot_OUTsmedley$REMM2_scorebin ,sep = "_"))
+cisreg_annot_OUTsmedley$REMM2_testbin %>% summary()
+
+#selecting the relevant results for the test evaluation from scores - categories designated in previous script based on scores/process
+
+df_test2 = cisreg_annot_OUTsmedley[!is.na(cisreg_annot_OUTsmedley$REMM2_scorebin), ] %>% select(., "Group","REMM2_scorebin")
+
+table(df_test2)
+summary(df_test2)
+#Control n in test set (all variants)
+sum(df_test2$Group=="Control")
+#disease n in test set (all variants)
+sum(df_test2$Group=="Disease")
+
+#How many variants in test set scored
+#Control n
+test2_cont_n = sum(df_test2$Group=="Control")
+
+#disease n
+test2_dis_n = sum(df_test2$Group=="Disease")
+
+#test n
+test2_all_n = nrow(df_test2)
+
+#test1-evaluation numbers
+
+#Calculate n True Pos (Event pos)
+test2_TP = df_test2 %>% filter(Group=="Disease" & REMM2_scorebin == "score_high") %>% count()
+print(test2_TP)
+
+#calculate n True neg (no event neg)
+test2_TN = df_test2 %>% filter(Group=="Control" & REMM2_scorebin == "score_low") %>% count()
+print(test2_TN)
+
+#calculate false positive (no event pos)
+test2_FP = df_test2 %>% filter(Group=="Control" & REMM2_scorebin == "score_high") %>% count()
+print(test2_FP)
+
+#calculate false negative (event neg)
+test2_FN = df_test2 %>% filter(Group=="Disease" & REMM2_scorebin == "score_low") %>% count()
+print(test2_FN)
+
+
+#Calculate Uncertain (event no call)
+test2_UNP = df_test2 %>% filter(Group=="Disease" & REMM2_scorebin == "score_int") %>% count()
+
+#Calculate Uncertain (no event event no call )
+test2_UNN = df_test2 %>% filter(Group=="Control" & REMM2_scorebin == "score_int") %>% count()
+
+# calculate sensitivity
+test2_sens = test2_TP/(test2_TP + test2_FN)
+print(test2_sens)
+
+# cal specificity
+test2_spec = test2_TN/(test2_TN + test2_FP)
+print(test2_spec)
+
+#
+# calculate the LR for pos +
+#lr_pos(TP, FP, FN, TN) - cmd using package
+#sens/(1- spec) - interpretation of haldane fitting with wiggins
+# LR method used in brnich - prop cont variants pred path/prop disease variants predicted pathogenic
+test2_LRpos = (test2_TP/test2_dis_n)/(test2_FP/test2_cont_n)
+print(test2_LRpos)
+
+#calc 95% CI for the LR+
+#var(logLR) for the LR -
+test2_varLRpos = (1/test2_TN-1/test2_cont_n)+(1/test2_FN-1/test2_dis_n)
+print(test2_varLRpos)
+
+#calc low CI for the LR-
+exp(log(test2_LRpos) - 1.96 * sqrt(test2_varLRpos))
+
+#calc high CI for the LR-
+exp(log(test2_LRpos) + 1.96 * sqrt(test2_varLRpos))
+
+# calculate the LR for negative -
+#lr_neg(TP, FP, FN, TN)
+#(1-sens)/spec
+## LR method used in brnich - prop cont variants pred path/prop disease variants predicted pathogenic
+test2_LRneg = (test2_FN/test2_dis_n)/(test2_TN/test2_cont_n)
+print(test2_LRneg)
+
+#std error of LR
+test2_seLRneg = sqrt(((1/test2_FN)-(1/test2_dis_n))+((1/test2_TN)-(1/test2_cont_n)))
+
+#var(logLR) for the LR -
+test2_varLRneg = (1/test2_TN-1/test2_cont_n)+(1/test2_FN-1/test2_dis_n)
+print(test2_varLRneg)
+
+#calc low CI for the LR-
+exp(log(test2_LRneg) - 1.96 * sqrt(test2_varLRneg))
+
+#calc high CI for the LR-
+exp(log(test2_LRneg) + 1.96 * sqrt(test2_varLRneg))
+
+#
+# calculate the LR for no call
+test2_LRnocall = (test2_UNP/test2_dis_n)/(test2_UNN/test2_cont_n)
+print(test2_LRnocall)
+
+#var(logLR) for the LR no call
+test2_varLRnocall = (1/test2_UNN-1/test2_cont_n)+(1/test2_UNP-1/test2_dis_n)
+print(test2_varLRnocall)
+
+#calc low CI for the LR no call
+exp(log(test2_LRnocall) - 1.96 * sqrt(test2_varLRnocall))
+
+#calc high CI for the LR no call
+exp(log(test2_LRnocall) + 1.96 * sqrt(test2_varLRnocall))
+
+REMM_pos = c(test = test,
+        group = "LRpos",
+        LR = as.numeric(test2_LRpos), 
+        Var = as.numeric(test2_varLRpos), 
+        CI_low = as.numeric(exp(log(test2_LRpos) - 1.96 * sqrt(test2_varLRpos))), 
+        CI_high = as.numeric(exp(log(test2_LRpos) + 1.96 * sqrt(test2_varLRpos))))
+
+REMM_int = c(test = test,
+           group = "LRuninf",
+           LR = as.numeric(test2_LRnocall), 
+           Var = as.numeric(test2_varLRnocall), 
+           CI_low = as.numeric(exp(log(test2_LRnocall) - 1.96 * sqrt(test2_varLRnocall))), 
+           CI_high = as.numeric(exp(log(test2_LRnocall) + 1.96 * sqrt(test2_varLRnocall))))
+
+REMM_neg = c(test = test,
+        group = "LRneg",
+        LR = as.numeric(test2_LRneg), 
+        Var = as.numeric(test2_varLRneg), 
+        CI_low = as.numeric(exp(log(test2_LRneg) - 1.96 * sqrt(test2_varLRneg))), 
+        CI_high = as.numeric(exp(log(test2_LRneg) + 1.96 * sqrt(test2_varLRneg))))
+
+REMM_results2 = type.convert(as.data.frame(rbind(REMM_pos,REMM_int,REM_neg), row.names = FALSE), as.is = TRUE)
+REMM_results2
+
+############FIGURE PREPARATION
+
+REMM2_box = ggplot(cisregV_annot, aes(Group, REMM_score, fill = REMM_training_set))+ 
+  geom_boxplot() + labs(x = "", y = "REMM")+
+  theme(legend.position="none")+
+  theme_gray(base_size = 14)+
+  scale_fill_manual(values=c("#F8766D","#00BFC4","brown4"), na.value= "#999999")+
+  geom_boxplot() + geom_hline(yintercept = 0.8) + geom_hline(yintercept = 0.86)
+REMM2_box
+
+#Figure  - LRs 
+remm_LRplot = ggplot(data = REMM_results, aes(x=reorder(group,LR), y = LR, ymin=CI_low, ymax=CI_high)) +
+  geom_pointrange()+
+  coord_flip()+
+  labs(x = "", y = "Likelihood ratio log10 (95% CI)")+
+  theme_gray(base_size = 14)+
+  scale_y_continuous(trans = "log10", limits = c(0.1,23))+
+  geom_hline(yintercept = 0.23,  colour = "darkgreen") +
+  annotation_custom(grobTree(textGrob("moderate", x=0.08,  y=0.05, hjust=0,gp=gpar(col="darkgreen", fontsize=10))))+
+  geom_hline(yintercept = 0.48, colour = "green") +
+  annotation_custom(grobTree(textGrob("supporting", x=0.20,  y=0.05, hjust=0,gp=gpar(col="chartreuse3", fontsize=10))))+
+  geom_hline(yintercept = 1, colour = "gold") +
+  geom_hline(yintercept = 2.1, colour = "orange") +
+  annotation_custom(grobTree(textGrob("supporting", x=0.57,  y=0.05, hjust=0,gp=gpar(col="orange", fontsize=10))))+
+  geom_hline(yintercept = 4.3, colour = "red")+
+  annotation_custom(grobTree(textGrob("moderate", x=0.7,  y=0.05, hjust=0,gp=gpar(col="red", fontsize=10))))+
+  geom_hline(yintercept = 18.7, colour = "brown4")+
+  annotation_custom(grobTree(textGrob("strong", x=0.94,  y=0.05, hjust=0,gp=gpar(col="brown4", fontsize=10))))
+remm_LRplot
+
+#Figure adjusted REMM
+remm2_LRplot = ggplot(data = REMM_results2, aes(x=reorder(group,LR), y = LR, ymin=CI_low, ymax=CI_high)) +
+  geom_pointrange()+
+  coord_flip()+
+  labs(x = "", y = "Likelihood ratio log10 (95% CI)")+
+  theme_gray(base_size = 14)+
+  scale_y_continuous(trans = "log10", limits = c(0.1,23))+
+  geom_hline(yintercept = 0.23,  colour = "darkgreen") +
+  annotation_custom(grobTree(textGrob("moderate", x=0.08,  y=0.05, hjust=0,gp=gpar(col="darkgreen", fontsize=10))))+
+  geom_hline(yintercept = 0.48, colour = "green") +
+  annotation_custom(grobTree(textGrob("supporting", x=0.20,  y=0.05, hjust=0,gp=gpar(col="chartreuse3", fontsize=10))))+
+  geom_hline(yintercept = 1, colour = "gold") +
+  geom_hline(yintercept = 2.1, colour = "orange") +
+  annotation_custom(grobTree(textGrob("supporting", x=0.57,  y=0.05, hjust=0,gp=gpar(col="orange", fontsize=10))))+
+  geom_hline(yintercept = 4.3, colour = "red")+
+  annotation_custom(grobTree(textGrob("moderate", x=0.7,  y=0.05, hjust=0,gp=gpar(col="red", fontsize=10))))+
+  geom_hline(yintercept = 18.7, colour = "brown4")+
+  annotation_custom(grobTree(textGrob("strong", x=0.94,  y=0.05, hjust=0,gp=gpar(col="brown4", fontsize=10))))
+remm2_LRplot
+
+legend = get_legend(ggplot(cisregV_annot, aes(Group, REMM_score, fill = REMM_training_set))+ 
+                      geom_boxplot() + labs(x = "", y = "REMM")+
+                      theme(legend.position="right")+
+                      theme_gray(base_size = 14)+
+                      scale_fill_manual(values=c("#F8766D","#00BFC4","brown4"), na.value= "#999999")+
+                      geom_boxplot() + geom_hline(yintercept = 0.8) + geom_hline(yintercept = 0.86))
+
+ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig_newREMMlegend.svg", width = 10, height = 12, device='svg', dpi=1200)
+
+
+ggdraw(plot_grid((plot_grid(REMM2_box,rel_widths = c(1,1),ncol = 2, nrow = 1)),
+                 remm_LRplot,
+                 remm2_LRplot,
+                 align = "v", axis = "b", rel_widths = c(1), rel_heights = c(1.2,1,1),
+                 labels = c("A","B", "C" ),
+                 ncol = 1, nrow = 3))
+
+ggsave(filename = "D:/cisreg_manuscript/Fig_newREMM.png", width = 12, height = 10, device='png', dpi=1200)
+
+ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig_newREMM.svg", width = 10, height = 12, device='svg', dpi=1200)
+
+
+
+ggdraw(plot_grid(REMM2_box, rel_widths = c(1,1),
+                 align = "v", axis = "b",labels = c("A")))
+
+ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig_newREMM_box.svg", width = 8, height = 8, device='svg', dpi=1200)
+       
+
+ggdraw(plot_grid(remm_LRplot,
+                 remm2_LRplot,
+                 align = "v", axis = "b", rel_widths = c(1), rel_heights = c(1,1,1),
+                 labels = c("B", "C" ),
+                 ncol = 1, nrow = 2))
+
+ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig_newREMM_LRs.png", width = 12, height = 8, device='png', dpi=1200)
+
+ggsave(path = "D:/cisreg_manuscript/figures", filename = "Fig_newREMM_LRs.svg", width = 12, height = 10, device='svg', dpi=1200)
+
+#alternative figure 1
+REMM2_box
+ggplot(cisregV_annot, aes(Group, REMM_score, fill = REMM_training_set))+ 
+  geom_density() + labs(x = "", y = "REMM")+
+  theme(legend.position="none")+
+  theme_gray(base_size = 14)+
+  scale_fill_manual(values=c("#F8766D","#00BFC4","brown4"), na.value= "#999999")+
+  geom_boxplot() + geom_hline(yintercept = 0.8) + geom_hline(yintercept = 0.86)
+
+REMM2_density = ggplot(cisregV_annot, aes(REMM_score, fill = REMM_training_set))+
+  geom_density(position = "identity", alpha = 0.2)+
+  labs(x = "REMM", y = "density")+
+  geom_vline(xintercept = CADD_lower_threshold) + geom_vline(xintercept = CADD_upper_threshold)+ 
+  theme(legend.title = element_blank(), legend.position = "none")+
+  scale_fill_manual(values=c("#00BFC4","#F8766D","#9999CC"), na.value="#999999")
+REMM2_box
+
+
+###REMMdatasummary########################################################
+#setwd 
+setwd("D:/cisreg_manuscript/SUPP")
+cisregANNOT_c = read.table("Data/cisreg_testset_ANNOTcategories.txt", stringsAsFactors = TRUE , sep = "\t", header = TRUE)
+
+remm_summary = c(tool = "REMM",
+                 all_n = nrow(cisregANNOT_c),
+                 total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                 total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                 n_scored = sum(!is.na(cisregANNOT_c$REMM_score)),
+                 n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$REMM_score)),
+                 n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$REMM_score)),                 
+                 n_unscored = sum(is.na(cisregANNOT_c$REMM_score)),
+                 n_uninformative = sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | cisregANNOT_c$REMM_testbin == "Dis_score_no_call"),
+                 neg_cont_TN = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low"),
+                 int_cont_uninf = sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call"),
+                 pos_cont_FP = sum(cisregANNOT_c$REMM_testbin == "Cont_score_high"),
+                 neg_dis_FN = sum(cisregANNOT_c$REMM_testbin == "Dis_score_low"),
+                 int_dis_uninf = sum(cisregANNOT_c$REMM_testbin == "Dis_score_no_call"),
+                 pos_dis_TP = sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"),
+                 n_correct = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"),
+                 n_incorrect = sum(cisregANNOT_c$REMM_testbin == "Cont_score_high") + sum(cisregANNOT_c$REMM_testbin == "Dis_score_low"),
+                 n_undetermined = sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | 
+                                        cisregANNOT_c$REMM_testbin == "Dis_score_no_call" |
+                                        cisregANNOT_c$REMM_testbin == "Cont_NA" |
+                                        cisregANNOT_c$REMM_testbin == "Dis_NA"),
+                 percent_sens = (sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"))/((sum(cisregANNOT_c$REMM_testbin == "Dis_score_high") + sum(cisregANNOT_c$REMM_testbin == "Dis_score_low")))*100,
+                 percent_spec = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")/(sum(cisregANNOT_c$REMM_testbin == "Cont_score_low") + sum(cisregANNOT_c$REMM_testbin == "Cont_score_high"))*100,
+                 percent_acuracy = (((sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+
+                                        sum(cisregANNOT_c$REMM_testbin == "Dis_score_high")))/sum(!is.na(cisregANNOT_c$REMM_score))*100),
+                 percent_unscored = sum(is.na(cisregANNOT_c$REMM_score))/nrow(cisregANNOT_c)*100,
+                 percent_uninformative = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | cisregANNOT_c$REMM_testbin == "Dis_score_no_call"))/nrow(cisregANNOT_c)*100,
+                 percent_undetermined = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | 
+                                               cisregANNOT_c$REMM_testbin == "Dis_score_no_call" |
+                                               cisregANNOT_c$REMM_testbin == "Cont_NA" |
+                                               cisregANNOT_c$REMM_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_sens = (sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                 CLIN_percent_spec = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")/(sum(cisregANNOT_c$Group=="Control"))*100,
+                 CLIN_percent_accuracy = (((sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+
+                                              sum(cisregANNOT_c$REMM_testbin == "Dis_score_high")))/(nrow(cisregANNOT_c)))*100,
+                 CLIN_percent_correct = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_incorrect = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_high") + sum(cisregANNOT_c$REMM_testbin == "Dis_score_low"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_undetermined = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | 
+                                                    cisregANNOT_c$REMM_testbin == "Dis_score_no_call" |
+                                                    cisregANNOT_c$REMM_testbin == "Cont_NA" |
+                                                    cisregANNOT_c$REMM_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+
+
+remm_summary
+
+remm_mts_summary = c(tool = "REMM_mts",
+                 all_n = nrow(cisreg_annot_OUTsmedley),
+                 total_n_cont = sum(cisreg_annot_OUTsmedley$Group=="Control"),
+                 total_n_dis = sum(cisreg_annot_OUTsmedley$Group=="Disease"),
+                 n_scored = sum(!is.na(cisreg_annot_OUTsmedley$REMM_score)),
+                 n_scored_cont = sum(cisreg_annot_OUTsmedley$Group=="Control" & !is.na(cisreg_annot_OUTsmedley$REMM_score)),
+                 n_scored_dis = sum(cisreg_annot_OUTsmedley$Group=="Disease" & !is.na(cisreg_annot_OUTsmedley$REMM_score)),                 
+                 n_unscored = sum(is.na(cisreg_annot_OUTsmedley$REMM_score)),
+                 n_uninformative = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_no_call" | cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_no_call"),
+                 neg_cont_TN = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low"),
+                 int_cont_uninf = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_no_call"),
+                 pos_cont_FP = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_high"),
+                 neg_dis_FN = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_low"),
+                 int_dis_uninf = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_no_call"),
+                 pos_dis_TP = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high"),
+                 n_correct = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low")+sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high"),
+                 n_incorrect = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_high") + sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_low"),
+                 n_undetermined = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_no_call" | 
+                                        cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_no_call" |
+                                        cisreg_annot_OUTsmedley$REMM_testbin == "Cont_NA" |
+                                        cisreg_annot_OUTsmedley$REMM_testbin == "Dis_NA"),
+                 percent_sens = (sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high"))/((sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high") + sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_low")))*100,
+                 percent_spec = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low")/(sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low") + sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_high"))*100,
+                 percent_acuracy = (((sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low")+
+                                        sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high")))/sum(!is.na(cisreg_annot_OUTsmedley$REMM_score))*100),
+                 percent_unscored = sum(is.na(cisreg_annot_OUTsmedley$REMM_score))/nrow(cisreg_annot_OUTsmedley)*100,
+                 percent_uninformative = (sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_no_call" | cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_no_call"))/nrow(cisreg_annot_OUTsmedley)*100,
+                 percent_undetermined = (sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_no_call" | 
+                                               cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_no_call" |
+                                               cisreg_annot_OUTsmedley$REMM_testbin == "Cont_NA" |
+                                               cisreg_annot_OUTsmedley$REMM_testbin == "Dis_NA"))/nrow(cisreg_annot_OUTsmedley)*100,
+                 CLIN_percent_sens = (sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high"))/(sum(cisreg_annot_OUTsmedley$Group=="Disease"))*100,
+                 CLIN_percent_spec = sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low")/(sum(cisreg_annot_OUTsmedley$Group=="Control"))*100,
+                 CLIN_percent_accuracy = (((sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low")+
+                                              sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high")))/(nrow(cisreg_annot_OUTsmedley)))*100,
+                 CLIN_percent_correct = (sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_low")+sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_high"))/nrow(cisreg_annot_OUTsmedley)*100,
+                 CLIN_percent_incorrect = (sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_high") + sum(cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_low"))/nrow(cisreg_annot_OUTsmedley)*100,
+                 CLIN_percent_undetermined = (sum(cisreg_annot_OUTsmedley$REMM_testbin == "Cont_score_no_call" | 
+                                                    cisreg_annot_OUTsmedley$REMM_testbin == "Dis_score_no_call" |
+                                                    cisreg_annot_OUTsmedley$REMM_testbin == "Cont_NA" |
+                                                    cisreg_annot_OUTsmedley$REMM_testbin == "Dis_NA")/nrow(cisreg_annot_OUTsmedley)*100))
+
+remm_mts_summary
+
+cisreg_annot_OUTsmedley$REMM2_testbin %>% summary()
+
+remm_recal_mts_summary = c(tool = "REMM_recal_mts",
+                     all_n = nrow(cisreg_annot_OUTsmedley),
+                     total_n_cont = sum(cisreg_annot_OUTsmedley$Group=="Control"),
+                     total_n_dis = sum(cisreg_annot_OUTsmedley$Group=="Disease"),
+                     n_scored = sum(!is.na(cisreg_annot_OUTsmedley$REMM_score)),
+                     n_scored_cont = sum(cisreg_annot_OUTsmedley$Group=="Control" & !is.na(cisreg_annot_OUTsmedley$REMM_score)),
+                     n_scored_dis = sum(cisreg_annot_OUTsmedley$Group=="Disease" & !is.na(cisreg_annot_OUTsmedley$REMM_score)),                 
+                     n_unscored = sum(is.na(cisreg_annot_OUTsmedley$REMM_score)),
+                     n_uninformative = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_int" | cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_int"),
+                     neg_cont_TN = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low"),
+                     int_cont_uninf = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_int"),
+                     pos_cont_FP = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_high"),
+                     neg_dis_FN = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_low"),
+                     int_dis_uninf = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_int"),
+                     pos_dis_TP = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high"),
+                     n_correct = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low")+sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high"),
+                     n_incorrect = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_high") + sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_low"),
+                     n_undetermined = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_int" | 
+                                            cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_int" |
+                                            cisreg_annot_OUTsmedley$REMM2_testbin == "Control_NA" |
+                                            cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_NA"),
+                     percent_sens = (sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high"))/((sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high") + sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_low")))*100,
+                     percent_spec = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low")/(sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low") + sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_high"))*100,
+                     percent_acuracy = (((sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low")+
+                                            sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high")))/sum(!is.na(cisreg_annot_OUTsmedley$REMM_score))*100),
+                     percent_unscored = sum(is.na(cisreg_annot_OUTsmedley$REMM_score))/nrow(cisreg_annot_OUTsmedley)*100,
+                     percent_uninformative = (sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_int" | cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_int"))/nrow(cisreg_annot_OUTsmedley)*100,
+                     percent_undetermined = (sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_int" | 
+                                                   cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_int" |
+                                                   cisreg_annot_OUTsmedley$REMM2_testbin == "Control_NA" |
+                                                   cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_NA"))/nrow(cisreg_annot_OUTsmedley)*100,
+                     CLIN_percent_sens = (sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high"))/(sum(cisreg_annot_OUTsmedley$Group=="Disease"))*100,
+                     CLIN_percent_spec = sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low")/(sum(cisreg_annot_OUTsmedley$Group=="Control"))*100,
+                     CLIN_percent_accuracy = (((sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low")+
+                                                  sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high")))/(nrow(cisreg_annot_OUTsmedley)))*100,
+                     CLIN_percent_correct = (sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_low")+sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_high"))/nrow(cisreg_annot_OUTsmedley)*100,
+                     CLIN_percent_incorrect = (sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_high") + sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_low"))/nrow(cisreg_annot_OUTsmedley)*100,
+                     CLIN_percent_undetermined = (sum(cisreg_annot_OUTsmedley$REMM2_testbin == "Control_score_int" | 
+                                                        cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_score_int" |
+                                                        cisreg_annot_OUTsmedley$REMM2_testbin == "Control_NA" |
+                                                        cisreg_annot_OUTsmedley$REMM2_testbin == "Disease_NA")/nrow(cisreg_annot_OUTsmedley)*100))
+
+
+remm_recal_mts_summary
+
+
+summary_all = type.convert(as.data.frame(rbind(remm_summary,remm_mts_summary, remm_recal_mts_summary), row.names = TRUE), as.is = TRUE)
+
+#save data table, nb information included in Table 1 
+write.table(summary_all,"Data/240327_REMM_evaluation_summary.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
+
+summary_all_rounded = summary_all %>% dplyr::mutate(across(where(is.numeric), round, 2))
+write.table(summary_all_rounded,"Data/REMM_eval.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
