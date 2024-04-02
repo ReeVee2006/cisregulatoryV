@@ -2,7 +2,7 @@
 ##Analysing the correlation between allele frequency (maxAF) and conservation in regulatory regions
 #process - R code takes VEP annotated gnomAD control variants (grc38) to determine correlation and graph bins of maxAF 
 #input - VEP annotated variants in regulatory ROIs from gnomAD files (grc38), maxAF calculated from designated pops, and used as
-#Version 1 - created 03.03.23 - executed 21.03.23 on HPC
+#Version 1 - created 03.03.23 
 
 #######################################################
 #set up environment
@@ -14,10 +14,7 @@ library(vcfR)
 library(GenomicRanges)
 library(rstatix)
 
-#set environment
-setwd("L:/Lab_MandyS/Rehan/HPC")
-
-#############################################
+#set wd
 
 #load data - VEP output 
 #full control variant maxAF file
@@ -91,7 +88,6 @@ afcons$c_phyloP100 = as.numeric(afcons$c_phyloP100)
 summary(afcons)
 
 #set wd for output of all of the results, make a date folder to save specific results event
-#setwd("HPC")
 
 #
 binvalues = c(0, 0.00001,0.00002,0.0001,0.001,0.01,0.05,1)
@@ -99,7 +95,7 @@ binlabels = c("0-0.00001","0.00001-0.00002","0.00002-0.0001", "0.0001-0.001", "0
 afcons$bin  = cut(afcons$maxAF, breaks = binvalues, include.lowest = TRUE, labels = binlabels)
 afcons %>% group_by(bin) %>% summary()
 
-#write.table(afcons, "testset_vepafcons.txt",sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
+write.table(afcons, "temp/testset_vepafcons.txt",sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
 
 cor.test(afcons$maxAF,afcons$c_phyloP100, method = 'spearman')
 cor.test(afcons$maxAF,afcons$Conservation, method = 'spearman')
@@ -140,3 +136,5 @@ ungroup(afcons)
 
 kruskal.test(c_phyloP100 ~ bin, data = afcons)
 kruskal.test(Conservation ~ bin, data = afcons)
+
+dev(off)
