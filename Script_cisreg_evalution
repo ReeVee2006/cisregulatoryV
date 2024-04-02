@@ -1,0 +1,399 @@
+##cis reg variants - 
+##fig 6 - EPDnew analysis
+##input datasets in data folder - 
+##visualisation and analysis - 21.03.24 RV
+
+library(tidyverse)
+library(GenomicRanges)
+library(ggpubr)
+library(grid)
+library(cowplot)
+
+#-setup-------------------------------------------
+#setwd 
+setwd("D:/cisreg_manuscript/SUPP")
+
+## Load datasets
+#load disease-associated variant set
+cisregDraw = read.table("Data/Supplemental_DisVar.txt", header= TRUE, sep = "\t")
+#load control variant set
+cisregCraw = read.table("Data/Supplemental_ContVar.txt", header= TRUE, sep = "\t")
+
+#load complete annotation file, cisreg_annot for continued  analysis
+cisregANNOT_c = read.table("Data/cisreg_testset_ANNOTcategories.txt", stringsAsFactors = TRUE , sep = "\t", header = TRUE)
+#thresholds - CADD defined based on the independent calibration via wiggins scores
+CADD_upper_threshold = 10
+CADD_lower_threshold = 8
+#thresholds - defined based on the independent calibration via wiggins scores
+REMM_upper_threshold = 0.86
+REMM_lower_threshold = 0.80
+
+####################basic reference set characteristics
+head(cisregANNOT_c)
+cisregANNOT_c$Group = as.factor(ifelse(cisregANNOT_c$INFO == "Cont", "Control", "Disease"))
+
+sum(is.na(cisregANNOT_c$CADD_PHRED))
+sum(is.na(cisregANNOT_c$CADD_scorebin))
+
+sum(is.na(cisregANNOT_c$REMM_score))
+sum(is.na(cisregANNOT_c$REMM_scorebin))
+
+#count the total number of variants in the 
+n_distinct(cisregANNOT_c$ID)
+
+all_n = nrow(cisregANNOT_c)
+total_n_cont = sum(cisregANNOT_c$Group=="Control")
+total_n_dis = sum(cisregANNOT_c$Group=="Disease")
+
+#row = 
+  
+summary(cisregANNOT_c)
+colnames(cisregANNOT_c)
+
+#summary through categories
+##nb number undetermined refered to any variant that was not allocated evidence criteria, not scored, intermediate scores or category LRs not high enough for evidence
+cadd_summary = c(tool = "CADD",
+                 all_n = nrow(cisregANNOT_c),
+                 total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                 total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                 n_scored = sum(!is.na(cisregANNOT_c$CADD_PHRED)),
+                 n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$CADD_PHRED)),
+                 n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$CADD_PHRED)),
+                 n_unscored = sum(is.na(cisregANNOT_c$CADD_PHRED)),
+                 n_uninformative = sum(cisregANNOT_c$CADD_testbin == "Cont_score_no_call" | cisregANNOT_c$CADD_testbin == "Dis_score_no_call"),
+                 neg_cont_TN = sum(cisregANNOT_c$CADD_testbin == "Cont_score_low"),
+                 int_cont_uninf = sum(cisregANNOT_c$CADD_testbin == "Cont_score_no_call"),
+                 pos_cont_FP = sum(cisregANNOT_c$CADD_testbin == "Cont_score_high"),
+                 neg_dis_FN = sum(cisregANNOT_c$CADD_testbin == "Dis_score_low"),
+                 int_dis_uninf = sum(cisregANNOT_c$CADD_testbin == "Dis_score_no_call"),
+                 pos_dis_TP = sum(cisregANNOT_c$CADD_testbin == "Dis_score_high"),
+                 n_correct = sum(cisregANNOT_c$CADD_testbin == "Cont_score_low")+sum(cisregANNOT_c$CADD_testbin == "Dis_score_high"),
+                 n_incorrect = sum(cisregANNOT_c$CADD_testbin == "Cont_score_high") + sum(cisregANNOT_c$CADD_testbin == "Dis_score_low"),
+                 n_undetermined = sum(cisregANNOT_c$CADD_testbin == "Cont_score_no_call" | 
+                                                cisregANNOT_c$CADD_testbin == "Dis_score_no_call" |
+                                                cisregANNOT_c$CADD_testbin == "Cont_NA" |
+                                                cisregANNOT_c$CADD_testbin == "Dis_NA"),
+                 percent_sens = (sum(cisregANNOT_c$CADD_testbin == "Dis_score_high"))/((sum(cisregANNOT_c$CADD_testbin == "Dis_score_high") + sum(cisregANNOT_c$CADD_testbin == "Dis_score_low")))*100,
+                 percent_spec = sum(cisregANNOT_c$CADD_testbin == "Cont_score_low")/(sum(cisregANNOT_c$CADD_testbin == "Cont_score_low") + sum(cisregANNOT_c$CADD_testbin == "Cont_score_high"))*100,
+                 percent_acuracy = (((sum(cisregANNOT_c$CADD_testbin == "Cont_score_low")+
+                                        sum(cisregANNOT_c$CADD_testbin == "Dis_score_high")))/sum(!is.na(cisregANNOT_c$CADD_PHRED))*100),
+                 percent_unscored = sum(is.na(cisregANNOT_c$CADD_PHRED))/nrow(cisregANNOT_c)*100,
+                 percent_uninformative = (sum(cisregANNOT_c$CADD_testbin == "Cont_score_no_call" | cisregANNOT_c$CADD_testbin == "Dis_score_no_call"))/nrow(cisregANNOT_c)*100,
+                 percent_undetermined = (sum(cisregANNOT_c$CADD_testbin == "Cont_score_no_call" | 
+                                               cisregANNOT_c$CADD_testbin == "Dis_score_no_call" |
+                                               cisregANNOT_c$CADD_testbin == "Cont_NA" |
+                                               cisregANNOT_c$CADD_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_sens = (sum(cisregANNOT_c$CADD_testbin == "Dis_score_high"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                 CLIN_percent_spec = sum(cisregANNOT_c$CADD_testbin == "Cont_score_low")/(sum(cisregANNOT_c$Group=="Control"))*100,
+                 CLIN_percent_accuracy = (((sum(cisregANNOT_c$CADD_testbin == "Cont_score_low")+
+                                             sum(cisregANNOT_c$CADD_testbin == "Dis_score_high")))/all_n)*100,
+                 CLIN_percent_correct = (sum(cisregANNOT_c$CADD_testbin == "Cont_score_low")+sum(cisregANNOT_c$CADD_testbin == "Dis_score_high"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_incorrect = (sum(cisregANNOT_c$CADD_testbin == "Cont_score_high") + sum(cisregANNOT_c$CADD_testbin == "Dis_score_low"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_undetermined = (sum(cisregANNOT_c$CADD_testbin == "Cont_score_no_call" | 
+                                                    cisregANNOT_c$CADD_testbin == "Dis_score_no_call" |
+                                                    cisregANNOT_c$CADD_testbin == "Cont_NA" |
+                                                    cisregANNOT_c$CADD_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+
+                   
+cadd_summary
+
+remm_summary = c(tool = "REMM",
+                 all_n = nrow(cisregANNOT_c),
+                 total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                 total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                 n_scored = sum(!is.na(cisregANNOT_c$REMM_score)),
+                 n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$REMM_score)),
+                 n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$REMM_score)),                 
+                 n_unscored = sum(is.na(cisregANNOT_c$REMM_score)),
+                 n_uninformative = sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | cisregANNOT_c$REMM_testbin == "Dis_score_no_call"),
+                 neg_cont_TN = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low"),
+                 int_cont_uninf = sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call"),
+                 pos_cont_FP = sum(cisregANNOT_c$REMM_testbin == "Cont_score_high"),
+                 neg_dis_FN = sum(cisregANNOT_c$REMM_testbin == "Dis_score_low"),
+                 int_dis_uninf = sum(cisregANNOT_c$REMM_testbin == "Dis_score_no_call"),
+                 pos_dis_TP = sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"),
+                 n_correct = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"),
+                 n_incorrect = sum(cisregANNOT_c$REMM_testbin == "Cont_score_high") + sum(cisregANNOT_c$REMM_testbin == "Dis_score_low"),
+                 n_undetermined = sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | 
+                                                cisregANNOT_c$REMM_testbin == "Dis_score_no_call" |
+                                                cisregANNOT_c$REMM_testbin == "Cont_NA" |
+                                                cisregANNOT_c$REMM_testbin == "Dis_NA"),
+                 percent_sens = (sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"))/((sum(cisregANNOT_c$REMM_testbin == "Dis_score_high") + sum(cisregANNOT_c$REMM_testbin == "Dis_score_low")))*100,
+                 percent_spec = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")/(sum(cisregANNOT_c$REMM_testbin == "Cont_score_low") + sum(cisregANNOT_c$REMM_testbin == "Cont_score_high"))*100,
+                 percent_acuracy = (((sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+
+                                        sum(cisregANNOT_c$REMM_testbin == "Dis_score_high")))/sum(!is.na(cisregANNOT_c$REMM_score))*100),
+                 percent_unscored = sum(is.na(cisregANNOT_c$REMM_score))/nrow(cisregANNOT_c)*100,
+                 percent_uninformative = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | cisregANNOT_c$REMM_testbin == "Dis_score_no_call"))/nrow(cisregANNOT_c)*100,
+                 percent_undetermined = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | 
+                                               cisregANNOT_c$REMM_testbin == "Dis_score_no_call" |
+                                               cisregANNOT_c$REMM_testbin == "Cont_NA" |
+                                               cisregANNOT_c$REMM_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_sens = (sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                 CLIN_percent_spec = sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")/(sum(cisregANNOT_c$Group=="Control"))*100,
+                 CLIN_percent_accuracy = (((sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+
+                                        sum(cisregANNOT_c$REMM_testbin == "Dis_score_high")))/(nrow(cisregANNOT_c)))*100,
+                 CLIN_percent_correct = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_low")+sum(cisregANNOT_c$REMM_testbin == "Dis_score_high"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_incorrect = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_high") + sum(cisregANNOT_c$REMM_testbin == "Dis_score_low"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_undetermined = (sum(cisregANNOT_c$REMM_testbin == "Cont_score_no_call" | 
+                                                    cisregANNOT_c$REMM_testbin == "Dis_score_no_call" |
+                                                    cisregANNOT_c$REMM_testbin == "Cont_NA" |
+                                                    cisregANNOT_c$REMM_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+
+                 
+remm_summary
+
+fathmmkl_summary = c(tool = "FATHMM-MKL",
+                 all_n = nrow(cisregANNOT_c),
+                 total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                 total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                 n_scored = sum(!is.na(cisregANNOT_c$fthmmkl_Non.Coding.Score_grc37)),
+                 n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$fthmmkl_Non.Coding.Score_grc37)),
+                 n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$fthmmkl_Non.Coding.Score_grc37)),
+                 n_unscored = sum(is.na(cisregANNOT_c$fthmmkl_Non.Coding.Score_grc37)),
+                 n_uninformative = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_no_call" | cisregANNOT_c$fathmmlk_testbin == "Dis_score_no_call"),
+                 neg_cont_TN = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low"),
+                 int_cont_uninf = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_no_call"),
+                 pos_cont_FP = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_high"),
+                 neg_dis_FN = sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_low"),
+                 int_dis_uninf = sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_no_call"),
+                 pos_dis_TP = sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high"),
+                 n_correct = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low")+sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high"),
+                 n_incorrect = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_high") + sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_low"),
+                 n_undetermined = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_no_call" | 
+                                                cisregANNOT_c$fathmmlk_testbin == "Dis_score_no_call" |
+                                                cisregANNOT_c$fathmmlk_testbin == "Cont_NA" |
+                                                cisregANNOT_c$fathmmlk_testbin == "Dis_NA"),
+                 percent_sens = (sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high"))/((sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high") + sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_low")))*100,
+                 percent_spec = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low")/(sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low") + sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_high"))*100,
+                 percent_acuracy = (((sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low")+
+                                        sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high")))/sum(!is.na(cisregANNOT_c$fthmmkl_Non.Coding.Score_grc37))*100),
+                 percent_unscored = sum(is.na(cisregANNOT_c$fthmmkl_Non.Coding.Score_grc37))/nrow(cisregANNOT_c)*100,
+                 percent_uninformative = (sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_no_call" | cisregANNOT_c$fathmmlk_testbin == "Dis_score_no_call"))/nrow(cisregANNOT_c)*100,
+                 percent_undetermined = (sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_no_call" | 
+                                               cisregANNOT_c$fathmmlk_testbin == "Dis_score_no_call" |
+                                               cisregANNOT_c$fathmmlk_testbin == "Cont_NA" |
+                                               cisregANNOT_c$fathmmlk_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_sens = (sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                 CLIN_percent_spec = sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low")/(sum(cisregANNOT_c$Group=="Control"))*100,
+                 CLIN_percent_accuracy = (((sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low")+
+                                             sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high")))/(nrow(cisregANNOT_c)))*100,
+                 CLIN_percent_correct = (sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_low")+sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_high"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_incorrect = (sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_high") + sum(cisregANNOT_c$fathmmlk_testbin == "Dis_score_low"))/nrow(cisregANNOT_c)*100,
+                 CLIN_percent_undetermined = (sum(cisregANNOT_c$fathmmlk_testbin == "Cont_score_no_call" | 
+                                                    cisregANNOT_c$fathmmlk_testbin == "Dis_score_no_call" |
+                                                    cisregANNOT_c$fathmmlk_testbin == "Cont_NA" |
+                                                    cisregANNOT_c$fathmmlk_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+
+
+fathmmkl_summary
+
+fathmxf_summary = c(tool = "FATHMM-XF",
+                     all_n = nrow(cisregANNOT_c),
+                     total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                     total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                     n_scored = sum(!is.na(cisregANNOT_c$fthmxf_Non.Coding.Score_grc38)),
+                     n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$fthmxf_Non.Coding.Score_grc38)),
+                     n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$fthmxf_Non.Coding.Score_grc38)),
+                     n_unscored = sum(is.na(cisregANNOT_c$fthmxf_Non.Coding.Score_grc38)),
+                     n_uninformative = sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_no_call" | cisregANNOT_c$fathmxf_testbin == "Dis_score_no_call"),
+                     neg_cont_TN = sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low"),
+                     int_cont_uninf = sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_no_call"),
+                     pos_cont_FP = sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_high"),
+                     neg_dis_FN = sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_low"),
+                     int_dis_uninf = sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_no_call"),
+                     pos_dis_TP = sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high"),
+                     n_correct = sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low")+sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high"),
+                     n_incorrect = sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_high") + sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_low"),
+                     n_undetermined = (nrow(cisregANNOT_c)) - sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_no_call" | 
+                                                    cisregANNOT_c$fathmxf_testbin == "Dis_score_no_call" |
+                                                    cisregANNOT_c$fathmxf_testbin == "Cont_NA" |
+                                                    cisregANNOT_c$fathmxf_testbin == "Dis_NA"),
+                     percent_sens = (sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high"))/((sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high") + sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_low")))*100,
+                     percent_spec = sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low")/(sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low") + sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_high"))*100,
+                     percent_acuracy = (((sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low")+
+                                            sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high")))/sum(!is.na(cisregANNOT_c$fthmxf_Non.Coding.Score_grc38))*100),
+                     percent_unscored = sum(is.na(cisregANNOT_c$fthmxf_Non.Coding.Score_grc38))/nrow(cisregANNOT_c)*100,
+                     percent_uninformative = (sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_no_call" | cisregANNOT_c$fathmxf_testbin == "Dis_score_no_call"))/nrow(cisregANNOT_c)*100,
+                     percent_undetermined = (sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_no_call" | 
+                                                  cisregANNOT_c$fathmxf_testbin == "Dis_score_no_call" |
+                                                  cisregANNOT_c$fathmxf_testbin == "Cont_NA" |
+                                                  cisregANNOT_c$fathmxf_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100, 
+                     CLIN_percent_sens = (sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                     CLIN_percent_spec = (sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low"))/(sum(cisregANNOT_c$Group=="Control"))*100,
+                     CLIN_percent_accuracy = ((sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low")+
+                                                 sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high"))/(nrow(cisregANNOT_c)))*100,
+                     CLIN_percent_correct = (sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_low")+sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_high"))/nrow(cisregANNOT_c)*100,
+                     CLIN_percent_incorrect = (sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_high") + sum(cisregANNOT_c$fathmxf_testbin == "Dis_score_low"))/nrow(cisregANNOT_c)*100,
+                     CLIN_percent_undetermined = (sum(cisregANNOT_c$fathmxf_testbin == "Cont_score_no_call" | 
+                                                       cisregANNOT_c$fathmxf_testbin == "Dis_score_no_call" |
+                                                       cisregANNOT_c$fathmxf_testbin == "Cont_NA" |
+                                                       cisregANNOT_c$fathmxf_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+
+fathmxf_summary
+
+eigen_summary = c(tool = "Eigen",
+                    all_n = nrow(cisregANNOT_c),
+                    total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                    total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                    n_scored = sum(!is.na(cisregANNOT_c$eigen_Eigen.raw)),                 
+                    n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$eigen_Eigen.raw)),
+                    n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$eigen_Eigen.raw)),
+                    n_unscored = sum(is.na(cisregANNOT_c$eigen_Eigen.raw)),
+                    n_uninformative = sum(cisregANNOT_c$eigen_testbin == "Cont_score_no_call" | cisregANNOT_c$eigen_testbin == "Dis_score_no_call"),
+                    neg_cont_TN = sum(cisregANNOT_c$eigen_testbin == "Cont_score_low"),
+                    int_cont_uninf = sum(cisregANNOT_c$eigen_testbin == "Cont_score_no_call"),
+                    pos_cont_FP = sum(cisregANNOT_c$eigen_testbin == "Cont_score_high"),
+                    neg_dis_FN = sum(cisregANNOT_c$eigen_testbin == "Dis_score_low"),
+                    int_dis_uninf = sum(cisregANNOT_c$eigen_testbin == "Dis_score_no_call"),
+                    pos_dis_TP = sum(cisregANNOT_c$eigen_testbin == "Dis_score_high"),
+                    n_correct = sum(cisregANNOT_c$eigen_testbin == "Cont_score_low")+sum(cisregANNOT_c$eigen_testbin == "Dis_score_high"),
+                    n_incorrect = sum(cisregANNOT_c$eigen_testbin == "Cont_score_high") + sum(cisregANNOT_c$eigen_testbin == "Dis_score_low"),
+                    n_undetermined = sum(cisregANNOT_c$eigen_testbin == "Cont_score_no_call" | 
+                                                   cisregANNOT_c$eigen_testbin == "Dis_score_no_call" |
+                                                   cisregANNOT_c$eigen_testbin == "Cont_NA" |
+                                                   cisregANNOT_c$eigen_testbin == "Dis_NA"),
+                    percent_sens = (sum(cisregANNOT_c$eigen_testbin == "Dis_score_high"))/((sum(cisregANNOT_c$eigen_testbin == "Dis_score_high") + sum(cisregANNOT_c$eigen_testbin == "Dis_score_low")))*100,
+                    percent_spec = sum(cisregANNOT_c$eigen_testbin == "Cont_score_low")/(sum(cisregANNOT_c$eigen_testbin == "Cont_score_low") + sum(cisregANNOT_c$eigen_testbin == "Cont_score_high"))*100,
+                    percent_acuracy = (((sum(cisregANNOT_c$eigen_testbin == "Cont_score_low")+
+                                           sum(cisregANNOT_c$eigen_testbin == "Dis_score_high")))/sum(!is.na(cisregANNOT_c$eigen_Eigen.raw))*100),
+                    percent_unscored = sum(is.na(cisregANNOT_c$eigen_Eigen.raw))/nrow(cisregANNOT_c)*100,
+                    percent_uninformative = (sum(cisregANNOT_c$eigen_testbin == "Cont_score_no_call" | cisregANNOT_c$eigen_testbin == "Dis_score_no_call"))/nrow(cisregANNOT_c)*100,
+                    percent_undetermined = (sum(cisregANNOT_c$eigen_testbin == "Cont_score_no_call" | 
+                                                cisregANNOT_c$eigen_testbin == "Dis_score_no_call" |
+                                                cisregANNOT_c$eigen_testbin == "Cont_NA" |
+                                                cisregANNOT_c$eigen_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100,  
+                    CLIN_percent_sens = (sum(cisregANNOT_c$eigen_testbin == "Dis_score_high"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                    CLIN_percent_spec = sum(cisregANNOT_c$eigen_testbin == "Cont_score_low")/(sum(cisregANNOT_c$Group=="Control"))*100,
+                    CLIN_percent_accuracy = ((sum(cisregANNOT_c$eigen_testbin == "Cont_score_low")+
+                                               sum(cisregANNOT_c$eigen_testbin == "Dis_score_high"))/(nrow(cisregANNOT_c)))*100,
+                    CLIN_percent_correct = (sum(cisregANNOT_c$eigen_testbin == "Cont_score_low")+sum(cisregANNOT_c$eigen_testbin == "Dis_score_high"))/nrow(cisregANNOT_c)*100,
+                    CLIN_percent_incorrect = (sum(cisregANNOT_c$eigen_testbin == "Cont_score_high") + sum(cisregANNOT_c$eigen_testbin == "Dis_score_low"))/nrow(cisregANNOT_c)*100,
+                    CLIN_percent_undetermined = (sum(cisregANNOT_c$eigen_testbin == "Cont_score_no_call" | 
+                                                     cisregANNOT_c$eigen_testbin == "Dis_score_no_call" |
+                                                     cisregANNOT_c$eigen_testbin == "Cont_NA" |
+                                                     cisregANNOT_c$eigen_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+eigen_summary
+
+linsight_summary = c(tool = "LINSIGHT",
+                  all_n = nrow(cisregANNOT_c),
+                  total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                  total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                  n_scored = sum(!is.na(cisregANNOT_c$linsight_Lscore_hg19)),
+                  n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$linsight_Lscore_hg19)),
+                  n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$linsight_Lscore_hg19)),
+                  n_unscored = sum(is.na(cisregANNOT_c$linsight_Lscore_hg19)),
+                  n_uninformative = sum(cisregANNOT_c$linsight_testbin == "Cont_score_no_call" | cisregANNOT_c$linsight_testbin == "Dis_score_no_call"),
+                  neg_cont_TN = sum(cisregANNOT_c$linsight_testbin == "Cont_score_low"),
+                  int_cont_uninf = sum(cisregANNOT_c$linsight_testbin == "Cont_score_no_call"),
+                  pos_cont_FP = sum(cisregANNOT_c$linsight_testbin == "Cont_score_high"),
+                  neg_dis_FN = sum(cisregANNOT_c$linsight_testbin == "Dis_score_low"),
+                  int_dis_uninf = sum(cisregANNOT_c$linsight_testbin == "Dis_score_no_call"),
+                  pos_dis_TP = sum(cisregANNOT_c$linsight_testbin == "Dis_score_high"),
+                  n_correct = sum(cisregANNOT_c$linsight_testbin == "Cont_score_low")+sum(cisregANNOT_c$linsight_testbin == "Dis_score_high"),
+                  n_incorrect = sum(cisregANNOT_c$linsight_testbin == "Cont_score_high") + sum(cisregANNOT_c$linsight_testbin == "Dis_score_low"),
+                  n_undetermined = sum(cisregANNOT_c$linsight_testbin == "Cont_score_no_call" | 
+                                                 cisregANNOT_c$linsight_testbin == "Dis_score_no_call" |
+                                                 cisregANNOT_c$linsight_testbin == "Cont_NA" |
+                                                 cisregANNOT_c$linsight_testbin == "Dis_NA"),
+                  percent_sens = (sum(cisregANNOT_c$linsight_testbin == "Dis_score_high"))/((sum(cisregANNOT_c$linsight_testbin == "Dis_score_high") + sum(cisregANNOT_c$linsight_testbin == "Dis_score_low")))*100,
+                  percent_spec = sum(cisregANNOT_c$linsight_testbin == "Cont_score_low")/(sum(cisregANNOT_c$linsight_testbin == "Cont_score_low") + sum(cisregANNOT_c$linsight_testbin == "Cont_score_high"))*100,
+                  percent_acuracy = (((sum(cisregANNOT_c$linsight_testbin == "Cont_score_low")+
+                                         sum(cisregANNOT_c$linsight_testbin == "Dis_score_high")))/sum(!is.na(cisregANNOT_c$linsight_Lscore_hg19))*100),
+                  percent_unscored = sum(is.na(cisregANNOT_c$linsight_Lscore_hg19))/nrow(cisregANNOT_c)*100,
+                  percent_uninformative = (sum(cisregANNOT_c$linsight_testbin == "Cont_score_no_call" | cisregANNOT_c$linsight_testbin == "Dis_score_no_call"))/nrow(cisregANNOT_c)*100,
+                  percent_undetermined = (sum(cisregANNOT_c$linsight_testbin == "Cont_score_no_call" | 
+                                                cisregANNOT_c$linsight_testbin == "Dis_score_no_call" |
+                                                cisregANNOT_c$linsight_testbin == "Cont_NA" |
+                                                cisregANNOT_c$linsight_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100,
+                  CLIN_percent_sens = (sum(cisregANNOT_c$linsight_testbin == "Dis_score_high"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                  CLIN_percent_spec = sum(cisregANNOT_c$linsight_testbin == "Cont_score_low")/(sum(cisregANNOT_c$Group=="Control"))*100,
+                  CLIN_percent_accuracy = (sum(cisregANNOT_c$linsight_testbin == "Cont_score_low") + 
+                                             sum(cisregANNOT_c$linsight_testbin == "Dis_score_high"))/(nrow(cisregANNOT_c))*100,
+                  CLIN_percent_correct = (sum(cisregANNOT_c$linsight_testbin == "Cont_score_low")+sum(cisregANNOT_c$linsight_testbin == "Dis_score_high"))/nrow(cisregANNOT_c)*100,
+                  CLIN_percent_incorrect = (sum(cisregANNOT_c$linsight_testbin == "Cont_score_high") + sum(cisregANNOT_c$linsight_testbin == "Dis_score_low"))/nrow(cisregANNOT_c)*100,
+                  CLIN_percent_undetermined = (sum(cisregANNOT_c$linsight_testbin == "Cont_score_no_call" | 
+                                                cisregANNOT_c$linsight_testbin == "Dis_score_no_call" |
+                                                cisregANNOT_c$linsight_testbin == "Cont_NA" |
+                                                cisregANNOT_c$linsight_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+linsight_summary
+
+#combining CADD and REMM (Also see Figure 5)
+colnames(cisregANNOT_c)
+
+cisregANNOT_c$test_comb1 = case_when(
+  cisregANNOT_c$CADD_PHRED >= 10 & cisregANNOT_c$REMM_score >= 0.86 ~ "2high",
+  cisregANNOT_c$CADD_PHRED >= 10 & between(cisregANNOT_c$REMM_score,0.80,0.86) ~ "1high",
+  cisregANNOT_c$CADD_PHRED >= 10 & cisregANNOT_c$REMM_score <= 0.80 ~ "conflict",
+  between(cisregANNOT_c$CADD_PHRED,8,10) & cisregANNOT_c$REMM_score >= 0.86 ~ "1high",
+  between(cisregANNOT_c$CADD_PHRED,8,10) & between(cisregANNOT_c$REMM_score,0.80,0.86) ~ "int",
+  between(cisregANNOT_c$CADD_PHRED,8,10) & cisregANNOT_c$REMM_score <= 0.80 ~ "1low",
+  cisregANNOT_c$CADD_PHRED <= 8 & cisregANNOT_c$REMM_score >= 0.86 ~ "conflict",
+  cisregANNOT_c$CADD_PHRED <= 8 & between(cisregANNOT_c$REMM_score,0.80,0.86) ~ "1low",
+  cisregANNOT_c$CADD_PHRED <= 8 & cisregANNOT_c$REMM_score <= 0.80 ~ "2low",
+)
+
+summary(as.factor(cisregANNOT_c$test_comb1))
+
+cisregANNOT_c$test_comb1_bin = as.factor(case_when(
+  cisregANNOT_c$test_comb1 == "2high" | cisregANNOT_c$test_comb1 == "1high" ~ "pred_path",
+  cisregANNOT_c$test_comb1 == "1low" | cisregANNOT_c$test_comb1 == "int" | cisregANNOT_c$test_comb1 == "conflict"  ~ "no_call",
+  cisregANNOT_c$test_comb1 == "2low" ~ "pred_ben"))
+summary(cisregANNOT_c$test_comb1_bin)
+sum(is.na(cisregANNOT_c$test_comb1_bin))
+
+#create 6 bins for evidence categories
+cisregANNOT_c$test_comb1_testbin = as.factor(paste(cisregANNOT_c$Group,cisregANNOT_c$test_comb1_bin ,sep = "_"))
+summary(cisregANNOT_c$test_comb1_testbin)
+sum(is.na(cisregANNOT_c$test_comb1_testbin))
+
+CADDREMM_summary = c(tool = "CADD/REMM",
+                     all_n = nrow(cisregANNOT_c),
+                     total_n_cont = sum(cisregANNOT_c$Group=="Control"),
+                     total_n_dis = sum(cisregANNOT_c$Group=="Disease"),
+                     n_scored = sum(!is.na(cisregANNOT_c$test_comb1)),
+                     n_scored_cont = sum(cisregANNOT_c$Group=="Control" & !is.na(cisregANNOT_c$test_comb1)),
+                     n_scored_dis = sum(cisregANNOT_c$Group=="Disease" & !is.na(cisregANNOT_c$test_comb1)),
+                     n_unscored = sum(is.na(cisregANNOT_c$test_comb1)),
+                     n_uninformative = sum(cisregANNOT_c$test_comb1_bin == "no_call"),
+                     neg_cont_TN = sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben"),
+                     int_cont_uninf = sum(cisregANNOT_c$test_comb1_testbin == "Control_no_call"),
+                     pos_cont_FP = sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_path"),
+                     neg_dis_FN = sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_ben"),
+                     int_dis_uninf = sum(cisregANNOT_c$test_comb1_testbin == "Disease_no_call"),
+                     pos_dis_TP = sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path"),
+                     n_correct = sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben")+sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path"),
+                     n_incorrect = sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_path") + sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_ben"),
+                     n_undetermined = sum(cisregANNOT_c$test_comb1_testbin == "Control_no_call" | 
+                                            cisregANNOT_c$test_comb1_testbin == "Disease_no_call" |
+                                            cisregANNOT_c$test_comb1_testbin == "Cont_NA" |
+                                            cisregANNOT_c$test_comb1_testbin == "Dis_NA"),
+                     percent_sens = (sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path"))/((sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path") + sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_ben")))*100,
+                     percent_spec = sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben")/(sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben") + sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_path"))*100,
+                     percent_acuracy = (((sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben")+
+                                            sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path")))/sum(!is.na(cisregANNOT_c$test_comb1))*100),
+                     percent_unscored = sum(is.na(cisregANNOT_c$test_comb1))/nrow(cisregANNOT_c)*100,
+                     percent_uninformative = (sum(cisregANNOT_c$test_comb1_testbin == "Control_no_call" | cisregANNOT_c$test_comb1_testbin == "Disease_no_call"))/nrow(cisregANNOT_c)*100,
+                     percent_undetermined = (sum(cisregANNOT_c$test_comb1_testbin == "Control_no_call" | 
+                                                   cisregANNOT_c$test_comb1_testbin == "Disease_no_call" |
+                                                   cisregANNOT_c$test_comb1_testbin == "Cont_NA" |
+                                                   cisregANNOT_c$test_comb1_testbin == "Dis_NA"))/nrow(cisregANNOT_c)*100,
+                     CLIN_percent_sens = (sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path"))/(sum(cisregANNOT_c$Group=="Disease"))*100,
+                     CLIN_percent_spec = sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben")/(sum(cisregANNOT_c$Group=="Control"))*100,
+                     CLIN_percent_accuracy = ((sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben")+
+                                                 sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path"))/(nrow(cisregANNOT_c)))*100,
+                     CLIN_percent_correct = (sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_ben")+sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_path"))/nrow(cisregANNOT_c)*100,
+                     CLIN_percent_incorrect = (sum(cisregANNOT_c$test_comb1_testbin == "Control_pred_path") + sum(cisregANNOT_c$test_comb1_testbin == "Disease_pred_ben"))/nrow(cisregANNOT_c)*100,
+                     CLIN_percent_undetermined = (sum(cisregANNOT_c$test_comb1_testbin == "Control_no_call" | 
+                                                        cisregANNOT_c$test_comb1_testbin == "Disease_no_call" |
+                                                        cisregANNOT_c$test_comb1_testbin == "Cont_NA" |
+                                                        cisregANNOT_c$test_comb1_testbin == "Dis_NA")/nrow(cisregANNOT_c)*100))
+CADDREMM_summary
+
+summary_all = type.convert(as.data.frame(rbind(
+  cadd_summary, remm_summary, fathmmkl_summary, fathmxf_summary,eigen_summary, linsight_summary, CADDREMM_summary), row.names = TRUE), as.is = TRUE)
+
+#save data table, nb information included in Table 1 
+write.table(summary_all,"Data/reg_var_tool_evaluation_summary.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
+
+summary_all_rounded = summary_all %>% dplyr::mutate(across(where(is.numeric), round, 2))
+write.table(summary_all_rounded,"Data/tool_eval.txt", sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
